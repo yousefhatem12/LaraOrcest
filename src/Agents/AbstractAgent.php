@@ -9,6 +9,7 @@ use Yousef\LaraOrcest\Contracts\AgentContract;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
 
 abstract class AbstractAgent implements AgentContract
 {
@@ -65,18 +66,45 @@ abstract class AbstractAgent implements AgentContract
             ['role' => 'user', 'content' => $this->buildUserPrompt($state)],
         ];
 
-        // Call LLM with structured output schema
-        $response = $llm->chatStructured($messages, $this->getOutputSchema());
+        // Observability context and per-agent model routing
+        $options = [
+            'run_id' => $state->runId,
+            'agent_key' => $this->getName(),
+            'node_id' => $state->currentNode,
+        ];
 
-        // Update token usage in state
-        $usage = $response['usage'] ?? ['prompt_tokens' => 0, 'completion_tokens' => 0];
-        $state = $state->recordTokenUsage(
-            (int) ($usage['prompt_tokens'] ?? 0),
-            (int) ($usage['completion_tokens'] ?? 0)
-        );
+        $agentModel = $this->resolveModel();
+        if ($agentModel !== null && $agentModel !== '') {
+            $options['model'] = $agentModel;
+        }
+
+        // Call LLM with structured output schema
+        $response = $llm->chatStructured($messages, $this->getOutputSchema(), $options);
+
+        // Update token usage in state safely without breaking if usage is absent or mocked
+        $usage = $response['usage'] ?? [];
+        $promptTokens = (int) ($usage['prompt_tokens'] ?? $usage['input_tokens'] ?? 0);
+        $completionTokens = (int) ($usage['completion_tokens'] ?? $usage['output_tokens'] ?? 0);
+
+        $state = $state->recordTokenUsage(max(0, $promptTokens), max(0, $completionTokens));
 
         // Apply structured output and authorized tool effects
         return $this->applyOutput($state, $response['data'], $authorizedTools);
+    }
+
+    /**
+     * Resolves an agent-specific model override if configured.
+     */
+    protected function resolveModel(): ?string
+    {
+        $agentKey = $this->getName();
+        $configured = Config::get("lara-orcest.llm.agent_models.{$agentKey}");
+
+        if (! empty($configured)) {
+            return (string) $configured;
+        }
+
+        return null;
     }
 
     /**

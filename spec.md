@@ -665,10 +665,35 @@ return [
     'enabled' => env('LARA_ORCEST_ENABLED', true),
 
     'llm' => [
-        'default' => env('LARA_ORCEST_LLM', 'openai'),
-        'timeout' => 60,
-        'max_retries' => 2,
-        'max_tokens' => 8000,
+        'default' => env('LARA_ORCEST_LLM', 'openai_compatible'),
+        'timeout' => (int) env('LARA_ORCEST_LLM_TIMEOUT', 60),
+        'max_retries' => (int) env('LARA_ORCEST_LLM_RETRIES', 2),
+        'max_tokens' => (int) env('LARA_ORCEST_LLM_MAX_TOKENS', 8000),
+
+        'drivers' => [
+            'openai_compatible' => [
+                'driver' => 'openai_compatible',
+                'base_url' => env('LARA_ORCEST_LLM_BASE_URL', 'https://api.openai.com/v1'),
+                'api_key' => env('LARA_ORCEST_LLM_API_KEY', env('OPENAI_API_KEY')),
+                'model' => env('LARA_ORCEST_LLM_MODEL', 'gpt-4o-mini'),
+                'timeout' => (int) env('LARA_ORCEST_LLM_TIMEOUT', 60),
+                'retries' => (int) env('LARA_ORCEST_LLM_RETRIES', 2),
+                'retry_sleep' => 100,
+            ],
+        ],
+
+        // Optional per-agent proxy model routing
+        'agent_models' => [
+            'business_analyst' => env('LARA_ORCEST_MODEL_BUSINESS_ANALYST'),
+            'product_manager' => env('LARA_ORCEST_MODEL_PRODUCT_MANAGER'),
+            'architect' => env('LARA_ORCEST_MODEL_ARCHITECT'),
+            'git_agent' => env('LARA_ORCEST_MODEL_GIT_AGENT'),
+            'database_agent' => env('LARA_ORCEST_MODEL_DATABASE_AGENT'),
+            'backend_agent' => env('LARA_ORCEST_MODEL_BACKEND_AGENT'),
+            'qa_agent' => env('LARA_ORCEST_MODEL_QA_AGENT'),
+            'fixer_agent' => env('LARA_ORCEST_MODEL_FIXER_AGENT'),
+            'reviewer_agent' => env('LARA_ORCEST_MODEL_REVIEWER_AGENT'),
+        ],
     ],
 
     'execution' => [
@@ -697,10 +722,22 @@ return [
     ],
 
     'checkpointer' => [
-        'driver' => 'database', // database or json
+        'driver' => 'json', // json or database
     ],
 ];
 ```
+
+### LiteLLM Proxy Integration (Zero Python in Laravel)
+
+LaraOrcest connects to an OpenAI-compatible HTTP endpoint by default. Developers can run LiteLLM Proxy (`litellm --config config.yaml --port 4000`) and set:
+```dotenv
+LARA_ORCEST_LLM=openai_compatible
+LARA_ORCEST_LLM_BASE_URL=http://localhost:4000/v1
+LARA_ORCEST_LLM_API_KEY=sk-litellm-proxy-key
+LARA_ORCEST_LLM_MODEL=gpt-4o-mini
+LARA_ORCEST_MODEL_ARCHITECT=claude-3-5-sonnet
+```
+No Python code, sidecars, or Python packages are required inside Laravel. Proxy requests automatically convey `run_id`, `agent_key`, and `node_id` in both HTTP headers and request metadata for tracing in LiteLLM and Langfuse.
 
 Configuration values are examples, not a finalized public API. Validate
 them during service-provider boot or package initialization.

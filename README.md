@@ -47,4 +47,77 @@
       "symlink": true
     }
   }
-]
+],
+"require": {
+  "yousef/lara-orcest": "*"
+}
+```
+
+3. Publish configuration and migrations:
+
+```bash
+php artisan vendor:publish --tag=lara-orcest-config
+php artisan vendor:publish --tag=lara-orcest-migrations
+php artisan migrate
+```
+
+## LLM Proxy & LiteLLM Integration (Zero Python in Laravel)
+
+`LaraOrcest` communicates with AI models using an **OpenAI-compatible HTTP driver** by default. This enables seamless connection to any local or self-hosted LLM proxy—such as **[LiteLLM](https://github.com/BerriAI/litellm)**, **vLLM**, **Ollama**, or **OpenRouter**—with **zero Python code or Python SDKs inside your Laravel project**.
+
+### Connecting to a LiteLLM Proxy via `.env`
+
+Add the following to your application's `.env`:
+
+```dotenv
+# Default driver uses OpenAI-compatible HTTP requests
+LARA_ORCEST_LLM=openai_compatible
+
+# Point directly to your local or remote LiteLLM proxy
+LARA_ORCEST_LLM_BASE_URL=http://localhost:4000/v1
+LARA_ORCEST_LLM_API_KEY=sk-litellm-proxy-key
+LARA_ORCEST_LLM_MODEL=gpt-4o-mini
+LARA_ORCEST_LLM_TIMEOUT=60
+LARA_ORCEST_LLM_RETRIES=2
+
+# Optional: Route specific agents to distinct proxy model aliases
+LARA_ORCEST_MODEL_ARCHITECT=claude-3-5-sonnet
+LARA_ORCEST_MODEL_REVIEWER_AGENT=o3-mini
+LARA_ORCEST_MODEL_BACKEND_AGENT=gpt-4o-mini
+```
+
+### Benefits
+- **No Python Runtime Required in PHP:** All communication happens over standard, highly optimized HTTP requests via Laravel's `Illuminate\Support\Facades\Http`.
+- **Per-Agent Model Routing:** Assign complex reasoning tasks (e.g. `architect`, `reviewer_agent`) to heavier frontier models while routing fast implementation tasks (`backend_agent`, `database_agent`) to lightweight models.
+- **Observability & Proxy Metadata:** Requests automatically pass `run_id`, `agent_key`, and `node_id` in both request headers (`X-Run-Id`, `X-Agent-Key`) and payload metadata for centralized tracing in LiteLLM, Langfuse, or OpenTelemetry.
+- **Safe Secrets Handling:** API keys are never stored in `RunState` or serialized into checkpoints and are automatically redacted in error messages.
+
+## Usage
+
+### Artisan CLI
+
+```bash
+# Build a feature with the multi-agent pod
+php artisan orcest:build "Create a task management API with projects and assignments"
+
+# Preview plan and files without touching disk or Git
+php artisan orcest:build "Add invoice billing" --dry-run
+
+# Inspect previous orchestration runs
+php artisan orcest:status
+```
+
+### Facade
+
+```php
+use Yousef\LaraOrcest\Facades\Orchestrator;
+
+$state = Orchestrator::run('Build a notification system for overdue invoices', [
+    'dry_run' => false,
+    'max_fix_attempts' => 3,
+]);
+
+if ($state->isCompleted()) {
+    echo "Feature built successfully on branch: {$state->gitState['feature_branch']}";
+}
+```

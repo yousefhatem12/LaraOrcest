@@ -15,8 +15,8 @@ interface LlmDriverContract
      * Sends a chat completion request.
      *
      * @param  array<int, array{role: string, content: string}>  $messages
-     * @param  array<string, mixed>  $options
-     * @return array{content: string, usage: array{prompt_tokens: int, completion_tokens: int, total_tokens: int}}
+     * @param  array<string, mixed>  $options  Options such as model, temperature, max_tokens, timeout, run_id, agent_key, node_id
+     * @return array{content: string, usage: array{prompt_tokens: int, completion_tokens: int, total_tokens: int}, metadata?: array<string, mixed>}
      */
     public function chat(array $messages, array $options = []): array;
 
@@ -25,8 +25,8 @@ interface LlmDriverContract
      *
      * @param  array<int, array{role: string, content: string}>  $messages
      * @param  array<string, mixed>  $schema
-     * @param  array<string, mixed>  $options
-     * @return array{data: array<string, mixed>, raw: string, usage: array{prompt_tokens: int, completion_tokens: int, total_tokens: int}}
+     * @param  array<string, mixed>  $options  Options such as model, temperature, max_tokens, timeout, run_id, agent_key, node_id
+     * @return array{data: array<string, mixed>, raw: string, usage: array{prompt_tokens: int, completion_tokens: int, total_tokens: int}, metadata?: array<string, mixed>}
      */
     public function chatStructured(array $messages, array $schema, array $options = []): array;
 }

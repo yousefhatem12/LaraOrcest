@@ -27,6 +27,10 @@ class LaraOrcestServiceProvider extends ServiceProvider
             return new LlmManager();
         });
 
+        $this->app->singleton(OpenAiCompatibleHttpDriver::class, function ($app) {
+            return $app->make(LlmManager::class)->driver('openai_compatible');
+        });
+
         $this->app->singleton(CheckpointerContract::class, function () {
             return new StateCheckpointer();
         });

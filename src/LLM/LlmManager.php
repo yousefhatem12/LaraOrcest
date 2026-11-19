@@ -10,6 +10,7 @@ use Yousef\LaraOrcest\LLM\Drivers\AnthropicDriver;
 use Yousef\LaraOrcest\LLM\Drivers\FakeDriver;
 use Yousef\LaraOrcest\LLM\Drivers\GeminiDriver;
 use Yousef\LaraOrcest\LLM\Drivers\OllamaDriver;
+use Yousef\LaraOrcest\LLM\Drivers\OpenAiCompatibleHttpDriver;
 use Yousef\LaraOrcest\LLM\Drivers\OpenAiDriver;
 use Yousef\LaraOrcest\Support\Config;
 
@@ -51,7 +52,7 @@ class LlmManager
             return $this->defaultDriver;
         }
 
-        return (string) Config::get('lara-orcest.llm.default', 'fake');
+        return (string) Config::get('lara-orcest.llm.default', 'openai_compatible');
     }
 
     public function setDefaultDriver(string $name): self
@@ -63,9 +64,10 @@ class LlmManager
 
     protected function createDriver(string $name): LlmDriverContract
     {
-        return match ($name) {
+        return match (strtolower($name)) {
             'fake' => new FakeDriver(),
-            'openai' => new OpenAiDriver(),
+            'openai_compatible', 'openai-compatible' => new OpenAiCompatibleHttpDriver(),
+            'openai' => new OpenAiCompatibleHttpDriver(),
             'anthropic' => new AnthropicDriver(),
             'gemini' => new GeminiDriver(),
             'ollama' => new OllamaDriver(),
