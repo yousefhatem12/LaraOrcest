@@ -24,7 +24,7 @@ class RunState
      * @param  array<int, array{path: string, action: string, summary: string, timestamp: string}>  $artifacts
      * @param  array<string, mixed>  $testResults
      * @param  array<int, array{decision: string, findings: array, constraints: array, timestamp: string}>  $reviews
-     * @param  array{step_count: int, max_steps: int, fix_attempts: int, max_fix_attempts: int, dry_run: bool, token_usage: array{prompt_tokens: int, completion_tokens: int, total_tokens: int}}  $guardrails
+     * @param  array{step_count: int, max_steps: int, fix_attempts: int, max_fix_attempts: int, dry_run: bool, token_usage: array{prompt_tokens: int, completion_tokens: int, total_tokens: int, cost?: float}}  $guardrails
      * @param  array<string, mixed>  $metadata
      */
     public function __construct(
@@ -49,6 +49,7 @@ class RunState
                 'prompt_tokens' => 0,
                 'completion_tokens' => 0,
                 'total_tokens' => 0,
+                'cost' => 0.0,
             ],
         ],
         public readonly array $metadata = []
@@ -83,6 +84,7 @@ class RunState
                     'prompt_tokens' => 0,
                     'completion_tokens' => 0,
                     'total_tokens' => 0,
+                    'cost' => 0.0,
                 ],
             ],
             metadata: [
@@ -90,6 +92,18 @@ class RunState
                 'schema_version' => self::SCHEMA_VERSION,
             ]
         );
+    }
+
+    /**
+     * Named constructor for explicit run_id initialization.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public static function initial(string $runId, string $prompt, array $options = []): self
+    {
+        $options['run_id'] = $runId;
+
+        return self::create($prompt, $options);
     }
 
     public function withCurrentNode(string $node): self
@@ -208,6 +222,112 @@ class RunState
         );
     }
 
+    public function withArtifacts(array $artifacts): self
+    {
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            guardrails: $this->guardrails,
+            metadata: $this->metadata
+        );
+    }
+
+    public function withTestResults(array $testResults): self
+    {
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $testResults,
+            reviews: $this->reviews,
+            guardrails: $this->guardrails,
+            metadata: $this->metadata
+        );
+    }
+
+    public function withReviews(array $reviews): self
+    {
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $reviews,
+            guardrails: $this->guardrails,
+            metadata: $this->metadata
+        );
+    }
+
+    public function withGuardrails(array $guardrails): self
+    {
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            guardrails: $guardrails,
+            metadata: $this->metadata
+        );
+    }
+
+    public function withMetadata(array $metadata): self
+    {
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            guardrails: $this->guardrails,
+            metadata: $metadata
+        );
+    }
+
+    /**
+     * Increments the graph execution step count by 1.
+     */
+    public function incrementStep(): self
+    {
+        return $this->incrementSteps();
+    }
+
+    /**
+     * Increments the graph execution step count by 1.
+     */
     public function incrementSteps(): self
     {
         $guardrails = $this->guardrails;
@@ -230,6 +350,17 @@ class RunState
         );
     }
 
+    /**
+     * Increments the fix attempt counter by 1.
+     */
+    public function incrementFixAttempt(): self
+    {
+        return $this->incrementFixAttempts();
+    }
+
+    /**
+     * Increments the fix attempt counter by 1.
+     */
     public function incrementFixAttempts(): self
     {
         $guardrails = $this->guardrails;
@@ -333,14 +464,20 @@ class RunState
         );
     }
 
-    public function recordTokenUsage(int $promptTokens, int $completionTokens): self
+    public function recordTokenUsage(int $promptTokens, int $completionTokens, float $cost = 0.0): self
     {
         $guardrails = $this->guardrails;
-        $usage = $guardrails['token_usage'] ?? ['prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0];
+        $usage = $guardrails['token_usage'] ?? [
+            'prompt_tokens' => 0,
+            'completion_tokens' => 0,
+            'total_tokens' => 0,
+            'cost' => 0.0,
+        ];
 
-        $usage['prompt_tokens'] += $promptTokens;
-        $usage['completion_tokens'] += $completionTokens;
-        $usage['total_tokens'] += ($promptTokens + $completionTokens);
+        $usage['prompt_tokens'] = ($usage['prompt_tokens'] ?? 0) + $promptTokens;
+        $usage['completion_tokens'] = ($usage['completion_tokens'] ?? 0) + $completionTokens;
+        $usage['total_tokens'] = ($usage['total_tokens'] ?? 0) + ($promptTokens + $completionTokens);
+        $usage['cost'] = round(($usage['cost'] ?? 0.0) + $cost, 6);
         $guardrails['token_usage'] = $usage;
 
         return new self(
@@ -358,6 +495,65 @@ class RunState
             guardrails: $guardrails,
             metadata: $this->metadata
         );
+    }
+
+    public function getTotalTokens(): int
+    {
+        return (int) ($this->guardrails['token_usage']['total_tokens'] ?? 0);
+    }
+
+    public function getEstimatedCost(): float
+    {
+        return (float) ($this->guardrails['token_usage']['cost'] ?? 0.0);
+    }
+
+    public function pause(): self
+    {
+        return $this->withStatus(self::STATUS_PAUSED);
+    }
+
+    public function complete(): self
+    {
+        return $this->withStatus(self::STATUS_COMPLETED);
+    }
+
+    public function fail(?string $reason = null): self
+    {
+        $meta = $this->metadata;
+        if ($reason !== null) {
+            $meta['failure_reason'] = $reason;
+        }
+
+        return (new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: self::STATUS_FAILED,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            guardrails: $this->guardrails,
+            metadata: array_merge($meta, ['updated_at' => date('c')])
+        ));
+    }
+
+    public function getFailureReason(): ?string
+    {
+        return $this->metadata['failure_reason'] ?? null;
+    }
+
+    public function isRunning(): bool
+    {
+        return $this->status === self::STATUS_RUNNING;
+    }
+
+    public function isPaused(): bool
+    {
+        return $this->status === self::STATUS_PAUSED;
     }
 
     public function isDryRun(): bool
@@ -424,6 +620,9 @@ class RunState
      */
     public function toArray(): array
     {
+        // Redact any accidental secrets from metadata
+        $sanitizedMetadata = $this->sanitizeArray($this->metadata);
+
         return [
             'schema_version' => self::SCHEMA_VERSION,
             'run_id' => $this->runId,
@@ -438,7 +637,7 @@ class RunState
             'test_results' => $this->testResults,
             'reviews' => $this->reviews,
             'guardrails' => $this->guardrails,
-            'metadata' => $this->metadata,
+            'metadata' => $sanitizedMetadata,
         ];
     }
 
@@ -475,6 +674,7 @@ class RunState
                     'prompt_tokens' => 0,
                     'completion_tokens' => 0,
                     'total_tokens' => 0,
+                    'cost' => 0.0,
                 ],
             ]),
             metadata: (array) ($data['metadata'] ?? [])
@@ -493,5 +693,27 @@ class RunState
         if (! in_array($status, $valid, true)) {
             throw new InvalidArgumentException("Invalid RunState status: [{$status}]");
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $array
+     * @return array<string, mixed>
+     */
+    private function sanitizeArray(array $array): array
+    {
+        $sensitiveKeys = ['api_key', 'apikey', 'token', 'secret', 'password', 'authorization'];
+        $clean = [];
+
+        foreach ($array as $k => $v) {
+            if (in_array(strtolower((string) $k), $sensitiveKeys, true)) {
+                $clean[$k] = '[REDACTED]';
+            } elseif (is_array($v)) {
+                $clean[$k] = $this->sanitizeArray($v);
+            } else {
+                $clean[$k] = $v;
+            }
+        }
+
+        return $clean;
     }
 }

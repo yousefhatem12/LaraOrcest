@@ -8,6 +8,8 @@ use Illuminate\Support\ServiceProvider;
 use Yousef\LaraOrcest\Commands\OrcestBuildCommand;
 use Yousef\LaraOrcest\Commands\OrcestStatusCommand;
 use Yousef\LaraOrcest\Contracts\CheckpointerContract;
+use Yousef\LaraOrcest\Graph\DefaultGraphBuilder;
+use Yousef\LaraOrcest\Graph\GraphEngine;
 use Yousef\LaraOrcest\LLM\Drivers\OpenAiCompatibleHttpDriver;
 use Yousef\LaraOrcest\LLM\LlmManager;
 use Yousef\LaraOrcest\State\StateCheckpointer;
@@ -62,8 +64,19 @@ class LaraOrcestServiceProvider extends ServiceProvider
             return new GitCommandTool(pathGuard: $app->make(PathGuard::class));
         });
 
-        $this->app->singleton(CheckpointerContract::class, function () {
+        $this->app->singleton(StateCheckpointer::class, function () {
             return new StateCheckpointer();
+        });
+
+        $this->app->singleton(CheckpointerContract::class, function ($app) {
+            return $app->make(StateCheckpointer::class);
+        });
+
+        $this->app->bind(GraphEngine::class, function ($app) {
+            return DefaultGraphBuilder::build(
+                llm: $app->make(LlmManager::class)->driver(),
+                checkpointer: $app->make(CheckpointerContract::class)
+            );
         });
 
         $this->app->singleton('lara-orcest', function ($app) {

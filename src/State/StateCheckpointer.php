@@ -25,15 +25,24 @@ class StateCheckpointer implements CheckpointerContract
             return $this->driver;
         }
 
-        $driverName = (string) Config::get('lara-orcest.checkpointer.driver', 'json');
+        $driverName = (string) Config::get(
+            'lara-orcest.checkpoint.driver',
+            Config::get('lara-orcest.checkpointer.driver', 'json')
+        );
+
+        $jsonPath = Config::get(
+            'lara-orcest.checkpoint.path',
+            Config::get('lara-orcest.checkpoint.json_path', Config::get('lara-orcest.checkpointer.json_path'))
+        );
+
+        $table = Config::get(
+            'lara-orcest.checkpoint.table',
+            Config::get('lara-orcest.checkpointer.table')
+        );
 
         return $this->driver = match ($driverName) {
-            'json' => new JsonCheckpointer(
-                Config::get('lara-orcest.checkpointer.json_path')
-            ),
-            'database' => new DatabaseCheckpointer(
-                Config::get('lara-orcest.checkpointer.table')
-            ),
+            'json' => new JsonCheckpointer($jsonPath ? (string) $jsonPath : null),
+            'database' => new DatabaseCheckpointer($table ? (string) $table : null),
             default => throw new InvalidArgumentException("Unsupported checkpointer driver: [{$driverName}]"),
         };
     }
@@ -53,6 +62,16 @@ class StateCheckpointer implements CheckpointerContract
     public function load(string $runId): ?RunState
     {
         return $this->getDriver()->load($runId);
+    }
+
+    public function exists(string $runId): bool
+    {
+        return $this->getDriver()->exists($runId);
+    }
+
+    public function delete(string $runId): bool
+    {
+        return $this->getDriver()->delete($runId);
     }
 
     public function list(int $limit = 20): array

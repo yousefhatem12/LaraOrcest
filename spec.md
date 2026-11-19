@@ -557,49 +557,66 @@ All filesystem-touching tools rely on `PathGuard` to enforce project boundary co
 
 ## 8. Graph Engine & Execution Semantics
 
-### Core components
+### 8.1 Core Components
 
--   `GraphEngine`: Executes nodes, evaluates transitions, enforces
-    budgets, and coordinates checkpoints.
--   `EdgeRule`: Represents a conditional transition from one node to
-    another.
--   `AgentGraphNode`: Adapts an agent to the graph-node contract.
--   `RunState`: Shared state passed through every node.
--   `StateCheckpointer`: Persists and restores execution state.
+- **`GraphEngine` (`src/Graph/GraphEngine.php`):** The directed graph execution orchestrator. Registers nodes and priority-ordered `EdgeRule` transitions, coordinates checkpoints, evaluates guardrails, and supports clean resume from intermediate states.
+- **`EdgeRule` (`src/Graph/EdgeRule.php`):** Represents deterministic or conditional transitions (`fromNode -> toNode`) evaluated against `RunState`. Supports factory constructors (`always()`, `when()`) and priority sorting.
+- **`AgentGraphNode` (`src/Graph/Nodes/AgentGraphNode.php`):** Adapts an `AgentContract` to `GraphNodeContract`. Increments execution steps, checks step caps, executes agent logic with assigned sandboxed tools, and triggers checkpoints.
+- **`RunState` (`src/State/RunState.php`):** Pure serializable shared state passed through every node. Contains `run_id`, `prompt`, `current_node`, `status`, requirements, backlog, technical plan, git state, artifacts, test results, reviews, and guardrails budgets.
+- **`StateCheckpointer` (`src/State/StateCheckpointer.php`):** Persistence manager supporting file-based JSON storage (`JsonCheckpointer`) and relational database storage (`DatabaseCheckpointer`), ensuring safe checkpointing and crash recovery.
 
-### Node contract
+### 8.2 Graph Execution Flow & Transitions
 
-Each node should: 1. Validate that required upstream state exists. 2.
-Read only the state fields and tools permitted for its role. 3. Request
-structured output from its agent/LLM. 4. Validate the output against a
-schema before applying it. 5. Update only its authorized state fields.
-6. Append execution/artifact metadata. 7. Persist a checkpoint at the
-appropriate boundary. 8. Return control to the graph engine for
-transition selection.
+```text
+business_analyst -> product_manager -> architect -> git_agent -> database_agent -> backend_agent -> qa_agent
+                                                                                                        |
+                                                            +-------------------------------------------+
+                                                            |
+                                                            v
+                                                  [Tests Pass or Dry-run?]
+                                                   /                     \
+                                            (yes) /                       \ (no & canAttemptFix)
+                                                 v                         v
+                                          reviewer_agent <---------- fixer_agent
+                                           /          \                   ^
+                        (approved)        /            \ (revise & canFix) |
+                                         v              +------------------+
+                                [TERMINAL_COMPLETED]
+                                         |
+                                (if not dry_run)
+                                         v
+                                  Final Git Commit
+```
 
-### Structured LLM output
+#### Detailed Transition Rules & Priorities
 
--   Require schema-constrained JSON wherever supported.
--   Validate all model output server-side.
--   Reject unknown fields or invalid enum values unless explicitly
-    allowed.
--   Treat model output as untrusted data; never execute generated shell
-    commands directly.
--   Retry malformed output only within a bounded retry budget.
--   Track token usage and configured cost limits.
+1. **Sequential Foundation:**
+   - `business_analyst` -> `product_manager` (unconditional)
+   - `product_manager` -> `architect` (unconditional)
+   - `architect` -> `git_agent` (unconditional)
+   - `git_agent` -> `database_agent` (unconditional)
+   - `database_agent` -> `backend_agent` (unconditional)
+   - `backend_agent` -> `qa_agent` (unconditional)
 
-### Checkpointing and resume
+2. **QA Agent Routing (`qa_agent`):**
+   - **Priority 20:** If `areTestsPassing()` or `isDryRun()` -> `reviewer_agent`
+   - **Priority 10:** If tests fail AND `canAttemptFix()` -> `fixer_agent`
+   - **Priority 5:** If tests fail AND NOT `canAttemptFix()` -> `__failed__`
 
-Support database and JSON-based persistence behind `StateCheckpointer`.
+3. **Fixer Agent Routing (`fixer_agent`):**
+   - Transition to `qa_agent` to re-run automated tests on the modified codebase.
 
-A checkpoint should include: - Run ID and schema version. - Current node
-and run status. - Serialized state, excluding secrets. - Timestamp and
-transition metadata.
+4. **Reviewer Agent Routing (`reviewer_agent`):**
+   - **Priority 20:** If `isReviewApproved()` -> `__completed__` (triggers automated Git milestone commit when `auto_commit` is enabled)
+   - **Priority 10:** If decision is `revise` AND `canAttemptFix()` -> `fixer_agent`
+   - **Priority 5:** If decision is `revise` AND NOT `canAttemptFix()` -> `__failed__`
 
-Resume must validate checkpoint integrity, schema compatibility, project
-identity, Git branch/worktree state, and guardrail budgets before
-continuing. Do not blindly replay side effects after a crash; use
-idempotency keys or operation records where necessary.
+### 8.3 Checkpoint Lifecycle & Resume
+
+- **Save Boundaries:** State is persisted immediately upon run creation, after each node execution, and upon terminal status transition (`completed` or `failed`).
+- **Atomic File Writing:** `JsonCheckpointer` writes checkpoints to unique temporary files before atomically renaming them into place to prevent corruption.
+- **Crash Recovery & Resume:** Calling `Orchestrator::resume($runId)` restores the state from its last checkpoint, validates guardrails, and resumes execution from `$state->currentNode`.
+- **Zero Secret Leakage:** `RunState::toArray()` automatically filters out sensitive keys (`api_key`, `token`, `secret`, `password`, `authorization`) before serialization.
 
 ## 9. Security & Operational Guardrails
 

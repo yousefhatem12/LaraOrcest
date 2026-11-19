@@ -24,4 +24,14 @@ interface CheckpointerContract
      * @return array<int, array{run_id: string, prompt: string, current_node: string, status: string, updated_at: string}>
      */
     public function list(int $limit = 20): array;
+
+    /**
+     * Check if a checkpoint exists for the given run ID.
+     */
+    public function exists(string $runId): bool;
+
+    /**
+     * Delete a saved checkpoint by its run ID.
+     */
+    public function delete(string $runId): bool;
 }

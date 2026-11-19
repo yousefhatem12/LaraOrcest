@@ -53,7 +53,7 @@ class DefaultGraphBuilder
 
         // 2. Register agent nodes
         foreach ($agents as $agent) {
-            $engine->addNode(new AgentGraphNode($agent, $tools, $llm));
+            $engine->addNode(new AgentGraphNode($agent, $tools, $llm, $checkpointer));
         }
 
         // 3. Register sequential edges

@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Yousef\LaraOrcest\Contracts\CheckpointerContract;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
 
 class DatabaseCheckpointer implements CheckpointerContract
 {
@@ -15,9 +16,10 @@ class DatabaseCheckpointer implements CheckpointerContract
 
     public function __construct(?string $table = null)
     {
-        $this->table = $table ?: (function_exists('config')
-            ? config('lara-orcest.checkpointer.table', 'orcest_runs')
-            : 'orcest_runs');
+        $this->table = $table ?: (string) Config::get(
+            'lara-orcest.checkpoint.table',
+            Config::get('lara-orcest.checkpointer.table', 'orcest_runs')
+        );
     }
 
     public function save(RunState $state): void
@@ -54,6 +56,16 @@ class DatabaseCheckpointer implements CheckpointerContract
         }
 
         return RunState::fromArray($stateData);
+    }
+
+    public function exists(string $runId): bool
+    {
+        return DB::table($this->table)->where('run_id', $runId)->exists();
+    }
+
+    public function delete(string $runId): bool
+    {
+        return DB::table($this->table)->where('run_id', $runId)->delete() > 0;
     }
 
     public function list(int $limit = 20): array

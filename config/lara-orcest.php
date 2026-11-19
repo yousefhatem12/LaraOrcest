@@ -238,4 +238,15 @@ return [
         'json_path' => env('LARA_ORCEST_CHECKPOINT_DIR', null),
         'table' => 'orcest_runs',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Checkpoint Configuration Alias
+    |--------------------------------------------------------------------------
+    */
+    'checkpoint' => [
+        'driver' => env('LARA_ORCEST_CHECKPOINTER', 'json'),
+        'path' => env('LARA_ORCEST_CHECKPOINT_DIR', null),
+        'table' => 'orcest_runs',
+    ],
 ];

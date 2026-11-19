@@ -8,9 +8,10 @@ use Closure;
 use RuntimeException;
 use Yousef\LaraOrcest\Contracts\CheckpointerContract;
 use Yousef\LaraOrcest\Contracts\GraphNodeContract;
+use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Contracts\ToolContract;
-use Yousef\LaraOrcest\Graph\Nodes\AgentGraphNode;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
 use Yousef\LaraOrcest\Tools\GitCommandTool;
 
 class GraphEngine
@@ -41,6 +42,19 @@ class GraphEngine
         $this->checkpointer = $checkpointer;
     }
 
+    /**
+     * Factory method creating a default 9-agent GraphEngine.
+     *
+     * @param  array<string, ToolContract>|null  $tools
+     */
+    public static function createDefault(
+        LlmDriverContract $llm,
+        ?CheckpointerContract $checkpointer = null,
+        ?array $tools = null
+    ): self {
+        return DefaultGraphBuilder::build($llm, $checkpointer, $tools);
+    }
+
     public function addNode(GraphNodeContract $node): self
     {
         $this->nodes[$node->getKey()] = $node;
@@ -48,7 +62,25 @@ class GraphEngine
         return $this;
     }
 
-    public function addEdge(string $fromNode, string $toNode, ?Closure $condition = null, int $priority = 10): self
+    public function hasNode(string $key): bool
+    {
+        return isset($this->nodes[$key]);
+    }
+
+    public function getNode(string $key): ?GraphNodeContract
+    {
+        return $this->nodes[$key] ?? null;
+    }
+
+    /**
+     * @return array<string, GraphNodeContract>
+     */
+    public function getNodes(): array
+    {
+        return $this->nodes;
+    }
+
+    public function addEdge(string $fromNode, string $toNode, ?callable $condition = null, int $priority = 10): self
     {
         $rule = new EdgeRule($fromNode, $toNode, $condition, $priority);
         $this->edges[$fromNode][] = $rule;
@@ -57,6 +89,18 @@ class GraphEngine
         usort($this->edges[$fromNode], fn (EdgeRule $a, EdgeRule $b) => $b->priority <=> $a->priority);
 
         return $this;
+    }
+
+    /**
+     * @return array<string, array<int, EdgeRule>>|array<int, EdgeRule>
+     */
+    public function getEdges(?string $fromNode = null): array
+    {
+        if ($fromNode !== null) {
+            return $this->edges[$fromNode] ?? [];
+        }
+
+        return $this->edges;
     }
 
     public function onStep(Closure $listener): self
@@ -73,11 +117,27 @@ class GraphEngine
         return $this;
     }
 
+    public function getCheckpointer(): ?CheckpointerContract
+    {
+        return $this->checkpointer;
+    }
+
     /**
      * Executes the graph from the current state until a terminal node is reached or bounds exceeded.
      */
     public function run(RunState $state): RunState
     {
+        // If state is already terminal, return immediately
+        if ($state->isCompleted() || $state->isFailed()) {
+            return $state;
+        }
+
+        // Resume if paused
+        if ($state->isPaused()) {
+            $state = $state->withStatus(RunState::STATUS_RUNNING);
+            $this->saveCheckpoint($state);
+        }
+
         $currentNode = $state->currentNode;
         if ($currentNode === 'start' || ! isset($this->nodes[$currentNode])) {
             $currentNode = self::NODE_START;
@@ -86,14 +146,19 @@ class GraphEngine
         while ($state->status === RunState::STATUS_RUNNING) {
             // Guardrail check: max steps
             if ($state->hasExceededSteps()) {
-                $state = $state->withStatus(RunState::STATUS_FAILED);
+                $reason = "Maximum step count ({$state->guardrails['max_steps']}) exceeded.";
+                $state = $state->fail($reason);
                 $this->saveCheckpoint($state);
-                $this->notifyStep($state, $currentNode, 'Maximum step count exceeded.');
+                $this->notifyStep($state, $currentNode, $reason);
                 break;
             }
 
             if (! isset($this->nodes[$currentNode])) {
-                throw new RuntimeException("Unknown graph node: [{$currentNode}]");
+                $reason = "Unknown graph node: [{$currentNode}].";
+                $state = $state->fail($reason);
+                $this->saveCheckpoint($state);
+                $this->notifyStep($state, $currentNode, $reason);
+                break;
             }
 
             $node = $this->nodes[$currentNode];
@@ -101,14 +166,34 @@ class GraphEngine
             // Notify before step
             $this->notifyStep($state, $currentNode, "Executing node: {$currentNode}");
 
-            // Execute node
-            $state = $node->execute($state);
+            try {
+                // Execute node
+                $state = $node->execute($state);
+            } catch (\Throwable $e) {
+                $reason = "Node [{$currentNode}] encountered unhandled exception: " . $e->getMessage();
+                $state = $state->fail($reason);
+                $this->saveCheckpoint($state);
+                $this->notifyStep($state, $currentNode, $reason);
+                break;
+            }
 
             // Persist checkpoint after node execution
             $this->saveCheckpoint($state);
 
+            // If node execution failed state (e.g. step exceeded inside node), break
+            if ($state->isFailed() || $state->isCompleted()) {
+                break;
+            }
+
             // Determine next transition
-            $nextNode = $this->resolveNextNode($currentNode, $state);
+            try {
+                $nextNode = $this->resolveNextNode($currentNode, $state);
+            } catch (\Throwable $e) {
+                $state = $state->fail("Edge resolution error: " . $e->getMessage());
+                $this->saveCheckpoint($state);
+                $this->notifyStep($state, $currentNode, $e->getMessage());
+                break;
+            }
 
             if ($nextNode === self::TERMINAL_COMPLETED) {
                 $state = $this->finalizeRun($state);
@@ -119,9 +204,15 @@ class GraphEngine
             }
 
             if ($nextNode === self::TERMINAL_FAILED) {
-                $state = $state->withStatus(RunState::STATUS_FAILED);
+                $reason = 'Run terminated with failure determination.';
+                if ($state->hasExceededFixAttempts()) {
+                    $reason = "Maximum fix attempts ({$state->guardrails['max_fix_attempts']}) reached.";
+                } elseif (! $state->areTestsPassing()) {
+                    $reason = 'Automated tests failed and could not be corrected.';
+                }
+                $state = $state->fail($reason);
                 $this->saveCheckpoint($state);
-                $this->notifyStep($state, $currentNode, 'Run terminated with failure.');
+                $this->notifyStep($state, $currentNode, $reason);
                 break;
             }
 
@@ -154,7 +245,7 @@ class GraphEngine
      */
     protected function finalizeRun(RunState $state): RunState
     {
-        $autoCommit = (bool) \Yousef\LaraOrcest\Support\Config::get('lara-orcest.git.auto_commit', true);
+        $autoCommit = (bool) Config::get('lara-orcest.git.auto_commit', true);
 
         if ($autoCommit && ! $state->isDryRun() && ! empty($state->artifacts)) {
             // Commit verified changes

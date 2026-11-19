@@ -66,6 +66,21 @@ class JsonCheckpointer implements CheckpointerContract
         return RunState::fromArray($data);
     }
 
+    public function exists(string $runId): bool
+    {
+        return file_exists($this->getFilePath($runId));
+    }
+
+    public function delete(string $runId): bool
+    {
+        $filePath = $this->getFilePath($runId);
+        if (! file_exists($filePath)) {
+            return false;
+        }
+
+        return @unlink($filePath);
+    }
+
     public function list(int $limit = 20): array
     {
         $files = glob($this->storagePath . '/*.json');
