@@ -9,176 +9,379 @@
 </p>
 
 <p align="center">
-  <a href="#built-in-agent-roster">Agents</a> •
-  <a href="#local-development-setup">Setup</a> •
-  <a href="#detailed-architecture--spec">Architecture</a> •
+  <a href="#vision--core-philosophy">Vision</a> •
+  <a href="#built-in-agent-roster">Agent Roster</a> •
+  <a href="#directed-graph--workflow-lifecycle">Graph Lifecycle</a> •
+  <a href="#installation--setup">Setup</a> •
+  <a href="#llm-proxy--litellm-integration">LLM Proxy</a> •
+  <a href="#usage--examples">Usage</a> •
+  <a href="#sandboxed-tools--security-guardrails">Sandboxed Tools</a> •
+  <a href="#configuration-reference">Configuration</a> •
   <a href="./spec.md">Technical Spec</a>
 </p>
 
 ---
 
-## Vision
+## Vision & Core Philosophy
 
-`LaraOrcest` brings a role-based multi-agent pod (CrewAI style) and a stateful directed graph with bounded feedback loops (LangGraph style) directly into Laravel applications via Composer—without requiring an external Python service.
+**`LaraOrcest`** brings role-based multi-agent pods (CrewAI style) and stateful directed graphs with bounded feedback loops (LangGraph style) natively into Laravel applications via Composer—**with zero Python dependencies or external microservices**.
+
+In modern software development, writing high-quality Laravel features requires more than a single LLM prompt. It requires:
+1. **Requirements Analysis:** Uncovering domain invariants, authorization boundaries, and edge cases before writing code.
+2. **Product Prioritization:** Scoping tasks into incremental slices with verifiable acceptance criteria.
+3. **Architectural Planning:** Mapping models, migrations, form requests, controllers, policies, routes, and tests to idiomatic Laravel conventions.
+4. **Git Branch Isolation:** Isolating changes on a dedicated feature branch to keep `main` clean and safe.
+5. **Database & Backend Engineering:** Creating migrations, relationships, Eloquent models, and form-request-validated endpoints.
+6. **Automated QA & Cyclic Bug Fixing:** Writing PHPUnit/Pest tests and iterating in a bounded loop until tests pass.
+7. **Staff Reviewer Audit:** Inspecting code diffs against security standards, performance guidelines, and business specifications before committing.
+
+`LaraOrcest` automates this entire lifecycle inside your existing Laravel codebase under strict sandboxed guardrails.
+
+---
 
 ## Built-in Agent Roster
 
-1. **Business Analyst (`business_analyst`):** Extracts functional requirements, business rules, roles, and edge cases.
-2. **Product Manager (`product_manager`):** Prioritizes tasks and defines clear acceptance criteria.
-3. **Architect (`architect`):** Maps tasks to an idiomatic Laravel technical plan (migrations, models, actions/services, controllers, routes, tests).
-4. **Git Agent (`git_agent`):** Creates a dedicated feature branch and records scoped commits after verified milestones.
-5. **Database Agent (`database_agent`):** Creates and updates migrations, relationships, factories, and Eloquent models.
-6. **Backend Agent (`backend_agent`):** Implements controllers, form requests, domain/service classes, and routes.
-7. **QA Agent (`qa_agent`):** Writes tests based on acceptance criteria and runs the test suite.
-8. **Fixer Agent (`fixer_agent`):** Diagnoses failures or review feedback and applies scoped fixes within retry limits.
-9. **Reviewer Agent (`reviewer_agent`):** Audits changes against requirements, acceptance criteria, security, and scope guardrails.
+`LaraOrcest` includes a fixed roster of **9 specialized agents**, each with dedicated responsibilities, scoped tool access, structured JSON output schemas, and state field ownership:
 
-## Local Development Setup
+| Agent Key | Role | Goal | Allowed Tools | Output State Field |
+| :--- | :--- | :--- | :--- | :--- |
+| **`business_analyst`** | Laravel Domain & Systems Analyst | Analyzes prompt and codebase to produce unambiguous requirements, entities, business rules, and edge cases. | `file_reader` | `requirements_spec` |
+| **`product_manager`** | Technical Product Manager | Breaks down the specification into ordered tasks with testable acceptance criteria. | `file_reader` | `backlog` |
+| **`architect`** | Senior Laravel Software Architect | Designs clean, idiomatic architecture mapping tasks to migrations, models, controllers, requests, routes, and tests. | `file_reader` | `technical_plan` |
+| **`git_agent`** | Source Control & Release Hygiene Agent | Creates and isolates changes on a feature branch (`orcest/...`), verifies clean working trees, and manages milestone commits. | `git_command` | `git_state` |
+| **`database_agent`** | Laravel Database & Eloquent Specialist | Generates normalized migrations, factories, relationships, and Eloquent models scoped to `database/` and `app/Models/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` |
+| **`backend_agent`** | Laravel Backend & API Engineer | Implements form requests, controllers, actions, and API routes scoped to `app/`, `routes/`, and `config/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` |
+| **`qa_agent`** | Automated QA & Test Engineer | Writes comprehensive feature/unit tests in `tests/` based on acceptance criteria and executes `php artisan test`. | `file_reader`, `patch_writer`, `test_runner` | `test_results` |
+| **`fixer_agent`** | Root-Cause Bug Fixer & Debugger | Diagnoses failing tests or reviewer findings and applies targeted patches within `max_fix_attempts`. | `file_reader`, `patch_writer`, `artisan_runner`, `test_runner` | `artifacts`, `guardrails.fix_attempts` |
+| **`reviewer_agent`** | Code Quality & Security Reviewer | Audits changes against requirements, security standards, and test results, approving or requesting revisions. | `file_reader`, `git_command` | `reviews` |
 
-1. Create the standalone package repository (`LaraOrcest`).
-2. Link it to a fresh Laravel test application using a local `path` repository in the test app's `composer.json`:
+---
 
-```json
-"repositories": [
-  {
-    "type": "path",
-    "url": "../LaraOrcest",
-    "options": {
-      "symlink": true
-    }
-  }
-],
-"require": {
-  "yousef/lara-orcest": "*"
-}
+## Directed Graph & Workflow Lifecycle
+
+Workflows in `LaraOrcest` execute deterministically through `GraphEngine`, evaluating conditional `EdgeRule` transitions against `RunState`:
+
+```text
+  [Start Prompt]
+        │
+        ▼
+ business_analyst ──► product_manager ──► architect ──► git_agent ──► database_agent ──► backend_agent ──► qa_agent
+                                                                                                            │
+                                              ┌─────────────────────────────────────────────────────────────┘
+                                              ▼
+                                    [Tests Pass or Dry-run?]
+                                     /                    \
+                              (yes) /                      \ (no & canAttemptFix)
+                                   ▼                        ▼
+                            reviewer_agent ◄────────── fixer_agent
+                             /          \                  ▲
+          (approved)        /            \ (revise & canFix)│
+                           ▼              └─────────────────┘
+                  [TERMINAL_COMPLETED]
+                           │
+                 (if not dry_run)
+                           ▼
+               Automated Milestone Commit
 ```
 
-3. Publish configuration and migrations:
+### Feedback Loops & Guardrail Bounds
+- **QA Feedback Loop:** If `qa_agent` test execution fails and fix budget remains (`fix_attempts < max_fix_attempts`), execution routes to `fixer_agent`. After applying code patches, `fixer_agent` loops back to `qa_agent` to re-run tests.
+- **Reviewer Revision Loop:** If `reviewer_agent` determines revisions are needed (`revise`), execution routes to `fixer_agent` and re-runs tests through `qa_agent`.
+- **Automatic Reject Safeguard:** If automated tests fail in non-dry-run mode, `reviewer_agent` strictly refuses approval and enforces a revision cycle.
+- **Circuit Breaker Limits:** If `fix_attempts` reaches `max_fix_attempts` (default: 3) or graph execution steps exceed `max_steps` (default: 40), the engine terminates with `status = 'failed'`, recording the exact failure reason.
 
-```bash
-php artisan vendor:publish --tag=lara-orcest-config
-php artisan vendor:publish --tag=lara-orcest-migrations
-php artisan migrate
-```
+---
 
-## LLM Proxy & LiteLLM Integration (Zero Python in Laravel)
+## Installation & Setup
 
-`LaraOrcest` communicates with AI models using an **OpenAI-compatible HTTP driver** by default. This enables seamless connection to any local or self-hosted LLM proxy—such as **[LiteLLM](https://github.com/BerriAI/litellm)**, **vLLM**, **Ollama**, or **OpenRouter**—with **zero Python code or Python SDKs inside your Laravel project**.
+### Local Package Development (Recommended for Testing)
 
-### Connecting to a LiteLLM Proxy via `.env`
+1. Clone or place `LaraOrcest` alongside your Laravel test application:
+   ```text
+   projects/
+   ├── my-laravel-app/
+   └── LaraOrcest/
+   ```
+
+2. Link `LaraOrcest` to your Laravel app via Composer's `path` repository in `my-laravel-app/composer.json`:
+   ```json
+   "repositories": [
+       {
+           "type": "path",
+           "url": "../LaraOrcest",
+           "options": {
+               "symlink": true
+           }
+       }
+   ],
+   "require": {
+       "yousef/lara-orcest": "*"
+   }
+   ```
+
+3. Update Composer dependencies in your Laravel app:
+   ```bash
+   composer update yousef/lara-orcest
+   ```
+
+4. Publish package configuration and database migration:
+   ```bash
+   php artisan vendor:publish --tag=lara-orcest-config
+   php artisan vendor:publish --tag=lara-orcest-migrations
+   php artisan migrate
+   ```
+
+---
+
+## LLM Proxy & LiteLLM Integration
+
+`LaraOrcest` communicates with AI models using an **OpenAI-compatible HTTP driver** (`OpenAiCompatibleHttpDriver`). This allows pointing directly to any local or self-hosted LLM proxy—such as **[LiteLLM](https://github.com/BerriAI/litellm)**, **vLLM**, **Ollama**, or **OpenRouter**—with **zero Python inside your Laravel application**.
+
+### Connecting to LiteLLM via `.env`
 
 Add the following to your application's `.env`:
 
 ```dotenv
-# Default driver uses OpenAI-compatible HTTP requests
+# Default LLM driver
 LARA_ORCEST_LLM=openai_compatible
 
-# Point directly to your local or remote LiteLLM proxy
+# LiteLLM Proxy / OpenAI-Compatible Endpoint
 LARA_ORCEST_LLM_BASE_URL=http://localhost:4000/v1
 LARA_ORCEST_LLM_API_KEY=sk-litellm-proxy-key
 LARA_ORCEST_LLM_MODEL=gpt-4o-mini
 LARA_ORCEST_LLM_TIMEOUT=60
 LARA_ORCEST_LLM_RETRIES=2
 
-# Optional: Route specific agents to distinct proxy model aliases
+# Per-Agent Model Routing Overrides (Optional)
 LARA_ORCEST_MODEL_ARCHITECT=claude-3-5-sonnet
 LARA_ORCEST_MODEL_REVIEWER_AGENT=o3-mini
 LARA_ORCEST_MODEL_BACKEND_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_DATABASE_AGENT=gpt-4o-mini
 ```
 
-### Benefits
-- **No Python Runtime Required in PHP:** All communication happens over standard, highly optimized HTTP requests via Laravel's `Illuminate\Support\Facades\Http`.
-- **Per-Agent Model Routing:** Assign complex reasoning tasks (e.g. `architect`, `reviewer_agent`) to heavier frontier models while routing fast implementation tasks (`backend_agent`, `database_agent`) to lightweight models.
-- **Observability & Proxy Metadata:** Requests automatically pass `run_id`, `agent_key`, and `node_id` in both request headers (`X-Run-Id`, `X-Agent-Key`) and payload metadata for centralized tracing in LiteLLM, Langfuse, or OpenTelemetry.
-- **Safe Secrets Handling:** API keys are never stored in `RunState` or serialized into checkpoints and are automatically redacted in error messages.
+### Key Architectural Advantages
+- **Pure PHP HTTP Stack:** Uses Laravel's native `Illuminate\Support\Facades\Http` with built-in retry budgets, exponential backoff, and JSON schema constraints.
+- **Per-Agent Model Routing:** Assign complex reasoning and design agents (`architect`, `reviewer_agent`) to heavy frontier models while routing repetitive coding tasks to fast, cost-effective models.
+- **Observability Metadata:** Automatically injects `X-Run-Id`, `X-Agent-Key`, and payload metadata into every request for centralized tracing in LiteLLM, Langfuse, or OpenTelemetry.
+- **Zero Secret Leakage:** API keys and credentials are never stored in `RunState` or serialized into checkpoints and are automatically redacted in error messages.
 
-## Usage
+---
 
-### Artisan CLI
+## Usage & Examples
 
+### 1. Artisan CLI Commands
+
+#### Build a Feature
 ```bash
-# Build a feature with the multi-agent pod (argument)
-php artisan orcest:build "Create a task management API with projects and assignments"
+# Build a feature with prompt argument
+php artisan orcest:build "Create a task management API with projects, assignments, and status updates"
 
-# Build with option flag alternative
-php artisan orcest:build --prompt="Add invoice billing system"
+# Alternative syntax using --prompt flag
+php artisan orcest:build --prompt="Add Stripe billing webhook processor"
 
-# Preview plan, artifacts, and test runs without mutating disk or Git
-php artisan orcest:build "Add invoice billing" --dry-run
+# Dry-run mode: Preview requirements, backlog, code diffs, and test runs without altering disk or Git
+php artisan orcest:build "Add two-factor authentication" --dry-run
 
-# Custom guardrails (max steps and fix attempts)
-php artisan orcest:build "Implement Stripe webhooks" --max-steps=30 --max-fix-attempts=2
+# Custom guardrail bounds
+php artisan orcest:build "Implement invoice PDF generation" --max-steps=30 --max-fix-attempts=2
 
-# Resume a previous execution run from its last checkpoint
+# Route to a specific configured LLM driver (e.g. fake, openai, anthropic, ollama)
+php artisan orcest:build "Create user profile API" --llm=openai_compatible
+
+# Resume an interrupted or paused run from its last checkpoint
 php artisan orcest:build --resume=run_a1b2c3d4e5f6
+```
 
-# List recent orchestration runs
+#### Inspect Execution Runs & Status
+```bash
+# List recent execution runs in a formatted table
 php artisan orcest:status
 
-# Inspect detailed status, artifacts, and tests for a specific run
+# Inspect full details for a specific run ID (artifacts, test results, reviews, tokens, git branch)
 php artisan orcest:status run_a1b2c3d4e5f6
 ```
 
-### Facade
+---
+
+### 2. Facade Interface (`Orcest` or `Orchestrator`)
+
+You can use either `Yousef\LaraOrcest\Facades\Orcest` or `Yousef\LaraOrcest\Facades\Orchestrator`:
 
 ```php
 use Yousef\LaraOrcest\Facades\Orcest;
-// Or: use Yousef\LaraOrcest\Facades\Orchestrator;
+use Yousef\LaraOrcest\State\RunState;
 
-// Start a new orchestration run
-$state = Orcest::run('Build a notification system for overdue invoices', [
+// 1. Run a feature request
+$state = Orcest::run('Implement blog tag categorization with many-to-many relationship', [
     'dry_run' => false,
     'max_fix_attempts' => 3,
     'max_steps' => 40,
+    'on_step' => function (RunState $state, string $node, string $message) {
+        logger()->info("[Step {$state->guardrails['step_count']}] Node: {$node} - {$message}");
+    },
 ]);
 
 if ($state->isCompleted()) {
-    echo "Feature built successfully on branch: {$state->gitState['feature_branch']}\n";
-    echo "Total files generated: " . count($state->artifacts) . "\n";
+    echo "Feature built successfully!\n";
+    echo "Git Feature Branch: {$state->gitState['feature_branch']}\n";
+    echo "Artifacts Generated: " . count($state->artifacts) . "\n";
+    echo "Total Tokens Used: " . $state->getTotalTokens() . "\n";
+} else {
+    echo "Run failed at node [{$state->currentNode}]: {$state->getFailureReason()}\n";
 }
 
-// Resume an existing run from its checkpoint
-$resumedState = Orcest::resume($state->runId);
+// 2. Resume an existing run by its ID
+$resumedState = Orcest::resume('run_a1b2c3d4e5f6');
 
-// Check run details or list recent runs
-$status = Orcest::status($state->runId);
+// 3. Inspect run status programmatically
+$runSummary = Orcest::status('run_a1b2c3d4e5f6');
+$allRecentRuns = Orcest::status(); // Array of recent run summaries
 ```
 
-## Sandboxed Tools Layer & Security Boundaries
+---
 
-`LaraOrcest` implements strict process and path sandboxing so agents cannot compromise the application or host environment:
+## Sandboxed Tools & Security Guardrails
 
-1. **PathGuard & Root Isolation (`PathGuard`):**
-   - Resolves all paths relative to the project root (`base_path()`) and canonicalizes paths before access.
-   - Prevents directory traversal (`../`) and symlink escapes outside the workspace.
-   - Enforces an automated denylist blocking access to sensitive files and directories: `.env*`, `.git/`, `vendor/`, `node_modules/`, `storage/logs/`, `bootstrap/cache/`, `*.key`, `*.pem`.
-   - Supports per-agent write allow-lists (e.g. scoping `DatabaseAgent` to `database/` and `app/Models/`, `BackendAgent` to `app/`, `routes/`, `config/`, and `QaAgent` to `tests/`).
+`LaraOrcest` enforces strict security boundaries at the tool layer. Prompts are treated as untrusted inputs; tools validate and restrict every disk, command, and Git operation:
 
-2. **File Reader (`FileReaderTool`):**
-   - Safe inspection of files with optional line slicing (`offset`, `max_lines`), byte capping (`max_bytes`), and existence checking.
-   - Directory tree inspection and file searching (`path`, `recursive`, `pattern` glob filtering).
+### 1. PathGuard & Root Boundary (`PathGuard`)
+- Resolves all paths strictly relative to the project root (`base_path()`).
+- Rejects path traversal (`../`) and detects symlinks escaping outside the project root.
+- **Global Denylist:** Blocks read/write access to sensitive files and directories:
+  - Environment: `.env`, `.env.*`
+  - Version Control: `.git`, `.git/**`
+  - Dependencies: `vendor`, `vendor/**`, `node_modules`, `node_modules/**`
+  - Logs & Caches: `storage/logs/**`, `bootstrap/cache/**`, `storage/oauth*`
+  - Secrets & Certificates: `*.key`, `*.pem`, `*.crt`
+- **Per-Agent Allow-Lists:**
+  - `database_agent`: restricted to `database/` and `app/Models/`
+  - `backend_agent`: restricted to `app/`, `routes/`, and `config/`
+  - `qa_agent`: restricted strictly to `tests/`
+  - `fixer_agent`: restricted to `app/`, `database/`, `routes/`, and `tests/`
 
-3. **Patch Writer (`PatchWriterTool`):**
-   - Atomic file creation and full replacement with automatic parent directory generation.
-   - Targeted search-and-replace (`target`, `replacement`) validating that target substrings exist before modification.
-   - Safe deletion (`delete` action) within permitted allow-lists.
-   - Unified diff generation (`diff`) and direct `RunState` artifact recording (`applyToState()`).
+### 2. File Reader Tool (`FileReaderTool`)
+- Safe read-only inspection of single files with line slicing (`offset`, `max_lines`), byte capping (`max_bytes`), and existence checking.
+- Directory tree inspection with pattern filtering (e.g. `pattern: "*.php"`), automatically excluding vendor and log directories.
 
-4. **Artisan Runner (`ArtisanRunnerTool`):**
-   - Executes only allow-listed Artisan commands (e.g. `make:model`, `make:migration`, `make:controller`, `make:class`, `make:enum`, `make:interface`, `make:trait`, `route:list`, `migrate:status`).
-   - Process-isolated via `Symfony\Component\Process\Process` (no raw shell string concatenation).
-   - Blocks dangerous flags (`--force`, `--drop-views`, `--drop-types`, `--seed`) and rejects all shell metacharacters (`|`, `;`, `&`, `` ` ``, `$`, `<`, `>`, `\n`).
+### 3. Patch Writer Tool (`PatchWriterTool`)
+- Supports atomic file creation (`write`), targeted search-and-replace (`replace`), and safe file removal (`delete`).
+- Search-and-replace verifies that target substrings exist before modification.
+- Generates unified diffs (`diff`) and records artifacts into `RunState::$artifacts`.
+- Honors `$state->isDryRun()` without mutating disk.
 
-5. **Test Runner (`TestRunnerTool`):**
-   - Executes automated tests via `php artisan test` with configurable timeout handling.
-   - Returns structured output: `passed`, `exit_code`, `duration`, `summary`, and extracted `failures` array.
+### 4. Artisan Command Runner (`ArtisanRunnerTool`)
+- Executes allow-listed commands via `Symfony\Component\Process\Process` (`[PHP_BINARY, 'artisan', $cmd, ...$args]`) inside `projectRoot`.
+- **Approved Commands:** `make:migration`, `make:model`, `make:controller`, `make:request`, `make:test`, `make:factory`, `make:seeder`, `make:resource`, `make:policy`, `make:rule`, `make:class`, `make:enum`, `make:interface`, `make:trait`, `route:list`, `migrate:status`, `test`.
+- Strictly blocks dangerous flags (`--force`, `--drop-views`, `--drop-types`, `--seed`) and shell metacharacters (`|`, `;`, `&`, `` ` ``, `$`, `<`, `>`, `\n`).
 
-6. **Git Command (`GitCommandTool`):**
-   - Safe, restricted Git operations: `status`, `current_branch`, `branch`, `create_branch`, `diff`, `stage_files`, and `commit`.
-   - Blocks destructive operations: `push --force`, `reset --hard`, `clean -fd`, and direct commits/checkouts on protected branches (`main`, `master`, `production`, `staging`).
-   - Redacts credentials in output (`https://[REDACTED_CREDENTIALS]@`).
-   - Direct `RunState` synchronization (`applyToState()`).
+### 5. Automated Test Runner (`TestRunnerTool`)
+- Runs test suites via `php artisan test --without-tty` with configurable process timeouts.
+- Parses output into structured diagnostics: `passed`, `exit_code`, `duration`, `summary`, `failures`, and `timed_out` (handling exit code 124).
 
-7. **Dry-Run Mode Guarantee:**
-   - When `$state->guardrails['dry_run']` is `true`, mutating tools return simulated execution payloads without altering files, running commands, or modifying Git branches/commits.
+### 6. Git Operations (`GitCommandTool`)
+- Restricted fixed commands: `status`, `current_branch`, `branch`, `create_branch`, `diff`, `stage_files`, and `commit`.
+- Blocks destructive commands (`push --force`, `reset --hard`, `clean -fd`) and direct commits to protected branches (`main`, `master`, `production`, `staging`).
+- Redacts credentials matching `https://*@` to `https://[REDACTED_CREDENTIALS]@`.
 
+---
+
+## State Persistence & Checkpointing
+
+`LaraOrcest` persists execution state after each step and terminal event, allowing runs to be inspected or resumed without losing progress:
+
+- **JSON Driver (Default):** Saves states to `storage/app/orcest/checkpoints/{run_id}.json`. Uses atomic file writes (writing to temporary staging files before renaming) to prevent corruption.
+- **Database Driver:** Persists states in the `orcest_runs` database table via Laravel's query builder.
+- **Configurable Storage:** Configure driver, file path, and table under `config/lara-orcest.php`:
+  ```php
+  'checkpoint' => [
+      'driver' => env('LARA_ORCEST_CHECKPOINTER', 'json'), // 'json' or 'database'
+      'path' => env('LARA_ORCEST_CHECKPOINT_DIR', null),   // defaults to storage/app/orcest/checkpoints
+      'table' => 'orcest_runs',
+  ],
+  ```
+
+---
+
+## Configuration Reference
+
+Key configuration options available in `config/lara-orcest.php`:
+
+```php
+return [
+    // Enable or disable package globally
+    'enabled' => (bool) env('LARA_ORCEST_ENABLED', true),
+
+    // LLM Proxy & Provider settings
+    'llm' => [
+        'default' => env('LARA_ORCEST_LLM', 'openai_compatible'),
+        'drivers' => [
+            'openai_compatible' => [
+                'base_url' => env('LARA_ORCEST_LLM_BASE_URL', 'https://api.openai.com/v1'),
+                'api_key' => env('LARA_ORCEST_LLM_API_KEY', env('OPENAI_API_KEY')),
+                'model' => env('LARA_ORCEST_LLM_MODEL', 'gpt-4o-mini'),
+                'timeout' => (int) env('LARA_ORCEST_LLM_TIMEOUT', 60),
+                'retries' => (int) env('LARA_ORCEST_LLM_RETRIES', 2),
+            ],
+        ],
+        // Per-agent model routing
+        'agent_models' => [
+            'architect' => env('LARA_ORCEST_MODEL_ARCHITECT'),
+            'reviewer_agent' => env('LARA_ORCEST_MODEL_REVIEWER_AGENT'),
+            // ...
+        ],
+    ],
+
+    // Guardrail budgets
+    'execution' => [
+        'max_steps' => (int) env('LARA_ORCEST_MAX_STEPS', 40),
+        'max_fix_attempts' => (int) env('LARA_ORCEST_MAX_FIX_ATTEMPTS', 3),
+        'dry_run' => (bool) env('LARA_ORCEST_DRY_RUN', false),
+        'process_timeout' => (int) env('LARA_ORCEST_PROCESS_TIMEOUT', 120),
+    ],
+
+    // Git configuration
+    'git' => [
+        'enabled' => true,
+        'feature_branch_prefix' => env('LARA_ORCEST_BRANCH_PREFIX', 'orcest/'),
+        'protected_branches' => ['main', 'master', 'production', 'staging'],
+        'auto_commit' => true,
+        'auto_push' => false,
+    ],
+
+    // Tool boundaries and limits
+    'tools' => [
+        'max_read_size' => 1_000_000, // 1MB
+        'deny_paths' => ['.env', '.git', 'vendor', 'node_modules', 'storage/logs', '*.key'],
+        'process_timeout' => 120,
+    ],
+
+    // Checkpoint persistence
+    'checkpoint' => [
+        'driver' => env('LARA_ORCEST_CHECKPOINTER', 'json'),
+        'path' => env('LARA_ORCEST_CHECKPOINT_DIR', null),
+        'table' => 'orcest_runs',
+    ],
+];
+```
+
+---
+
+## Testing & Quality Assurance
+
+`LaraOrcest` maintains a comprehensive test suite covering unit, security, and feature integration:
+
+```bash
+# Run all package tests via PHPUnit
+./vendor/bin/phpunit
+
+# Run specific test suites
+./vendor/bin/phpunit tests/Unit/AgentsExecutionTest.php
+./vendor/bin/phpunit tests/Feature/ArtisanCommandsFeatureTest.php
+./vendor/bin/phpunit tests/Unit/PathGuardSecurityTest.php
+```
+
+---
+
+## License
+
+`LaraOrcest` is open-sourced software licensed under the **[MIT License](LICENSE)**.
