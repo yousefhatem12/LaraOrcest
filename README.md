@@ -1,6 +1,21 @@
-# LaraOrcest
+<p align="center">
+  <img src="art/logo.png" alt="LaraOrcest Logo" width="300" height="300">
+</p>
 
-Prompt-driven multi-agent orchestration for Laravel with specialized roles, stateful graph execution, automated tests, and safe Git workflows.
+<h1 align="center">LaraOrcest</h1>
+
+<p align="center">
+  <strong>Prompt-driven multi-agent orchestration for Laravel with specialized roles, stateful graph execution, automated tests, and safe Git workflows.</strong>
+</p>
+
+<p align="center">
+  <a href="#built-in-agent-roster">Agents</a> •
+  <a href="#local-development-setup">Setup</a> •
+  <a href="#detailed-architecture--spec">Architecture</a> •
+  <a href="./spec.md">Technical Spec</a>
+</p>
+
+---
 
 ## Vision
 
