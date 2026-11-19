@@ -24,17 +24,58 @@ class ArtisanRunnerTool implements ToolContract
     protected bool $dryRun;
 
     /**
+     * Dangerous flags that are strictly forbidden.
+     *
+     * @var array<int, string>
+     */
+    protected array $blockedFlags = [
+        '--force',
+        '--drop-views',
+        '--drop-types',
+        '--seed',
+    ];
+
+    /**
      * @param  array<int, string>|null  $allowedCommands
      */
     public function __construct(
         ?string $projectRoot = null,
         ?array $allowedCommands = null,
-        int $timeout = 60,
+        int $timeout = 120,
         bool $dryRun = false
     ) {
         $this->projectRoot = $projectRoot ?: Config::basePath();
-        $this->allowedCommands = $allowedCommands ?: (array) Config::get('lara-orcest.sandbox.allowed_artisan_commands', ['make:migration', 'make:model', 'make:controller', 'make:request', 'make:factory', 'make:seeder', 'make:resource', 'migrate:status']);
-        $this->timeout = $timeout;
+
+        $defaultCommands = [
+            'make:migration',
+            'make:model',
+            'make:controller',
+            'make:request',
+            'make:test',
+            'make:factory',
+            'make:seeder',
+            'make:resource',
+            'make:policy',
+            'make:rule',
+            'make:class',
+            'make:enum',
+            'make:interface',
+            'make:trait',
+            'route:list',
+            'migrate:status',
+            'test',
+        ];
+
+        $configuredCommands = Config::get(
+            'lara-orcest.tools.allowed_artisan_commands',
+            Config::get('lara-orcest.sandbox.allowed_artisan_commands')
+        );
+
+        $this->allowedCommands = $allowedCommands ?: (array) ($configuredCommands ?: $defaultCommands);
+
+        $configuredTimeout = Config::get('lara-orcest.tools.process_timeout');
+        $this->timeout = $configuredTimeout ? (int) $configuredTimeout : $timeout;
+
         $this->dryRun = $dryRun;
     }
 
@@ -45,7 +86,7 @@ class ArtisanRunnerTool implements ToolContract
 
     public function getDescription(): string
     {
-        return 'Executes explicitly allowed Artisan commands safely inside the project.';
+        return 'Executes explicitly allowed Artisan commands safely inside the project using Process isolation.';
     }
 
     public function setDryRun(bool $dryRun): self
@@ -55,6 +96,16 @@ class ArtisanRunnerTool implements ToolContract
         return $this;
     }
 
+    public function isDryRun(): bool
+    {
+        return $this->dryRun;
+    }
+
+    public function getAllowedCommands(): array
+    {
+        return $this->allowedCommands;
+    }
+
     public function getSchema(): array
     {
         return [
@@ -62,7 +113,7 @@ class ArtisanRunnerTool implements ToolContract
             'properties' => [
                 'command' => [
                     'type' => 'string',
-                    'description' => 'The Artisan command name (e.g. make:model).',
+                    'description' => 'The allow-listed Artisan command name (e.g. make:model, route:list).',
                 ],
                 'arguments' => [
                     'type' => 'array',
@@ -81,12 +132,14 @@ class ArtisanRunnerTool implements ToolContract
         }
 
         $command = trim((string) $params['command']);
-        $arguments = (array) ($params['arguments'] ?? []);
+        $arguments = array_values((array) ($params['arguments'] ?? []));
 
-        // Disallow shell operators in command name or arguments
-        $this->validateNoShellMetacharacters($command);
+        // Validate command name
+        $this->validateCommandName($command);
+
+        // Disallow shell operators & dangerous flags in arguments
         foreach ($arguments as $arg) {
-            $this->validateNoShellMetacharacters((string) $arg);
+            $this->validateArgument((string) $arg);
         }
 
         // Verify command is in allowed list
@@ -108,25 +161,52 @@ class ArtisanRunnerTool implements ToolContract
 
         $cmdArray = [PHP_BINARY, 'artisan', $command, ...$arguments];
         $process = new Process($cmdArray, $this->projectRoot, timeout: $this->timeout);
-        $process->run();
 
-        $output = mb_substr($process->getOutput() . $process->getErrorOutput(), 0, 10000);
+        try {
+            $process->run();
+            $exitCode = $process->getExitCode() ?? 1;
+            $output = mb_substr($process->getOutput() . $process->getErrorOutput(), 0, 10000);
+            $successful = $process->isSuccessful();
+        } catch (\Throwable $e) {
+            $exitCode = 1;
+            $output = "Artisan execution failed: " . $e->getMessage();
+            $successful = false;
+        }
 
         return [
             'command' => $command,
             'arguments' => $arguments,
-            'exit_code' => $process->getExitCode() ?? 1,
+            'exit_code' => $exitCode,
             'output' => $output,
-            'successful' => $process->isSuccessful(),
+            'successful' => $successful,
             'dry_run' => false,
         ];
     }
 
-    protected function validateNoShellMetacharacters(string $value): void
+    protected function validateCommandName(string $command): void
     {
-        // Disallow characters used for shell chaining or redirection
+        if (! preg_match('/^[a-zA-Z0-9_\-:]+$/', $command)) {
+            throw new RuntimeException("Invalid Artisan command format: [{$command}]");
+        }
+    }
+
+    protected function validateArgument(string $value): void
+    {
+        // Disallow null bytes
+        if (str_contains($value, "\0")) {
+            throw new RuntimeException("Argument contains null bytes: [{$value}]");
+        }
+
+        // Disallow characters used for shell chaining, redirection, or command interpolation
         if (preg_match('/[|;&`$<>\n\r]/', $value)) {
             throw new RuntimeException("Shell metacharacters detected in argument: [{$value}]");
+        }
+
+        // Disallow blocked dangerous flags
+        foreach ($this->blockedFlags as $flag) {
+            if ($value === $flag || str_starts_with($value, $flag . '=')) {
+                throw new RuntimeException("Dangerous flag [{$flag}] is strictly blocked for Artisan execution.");
+            }
         }
     }
 }

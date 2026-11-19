@@ -121,3 +121,42 @@ if ($state->isCompleted()) {
     echo "Feature built successfully on branch: {$state->gitState['feature_branch']}";
 }
 ```
+
+## Sandboxed Tools Layer & Security Boundaries
+
+`LaraOrcest` implements strict process and path sandboxing so agents cannot compromise the application or host environment:
+
+1. **PathGuard & Root Isolation (`PathGuard`):**
+   - Resolves all paths relative to the project root (`base_path()`) and canonicalizes paths before access.
+   - Prevents directory traversal (`../`) and symlink escapes outside the workspace.
+   - Enforces an automated denylist blocking access to sensitive files and directories: `.env*`, `.git/`, `vendor/`, `node_modules/`, `storage/logs/`, `bootstrap/cache/`, `*.key`, `*.pem`.
+   - Supports per-agent write allow-lists (e.g. scoping `DatabaseAgent` to `database/` and `app/Models/`, `BackendAgent` to `app/`, `routes/`, `config/`, and `QaAgent` to `tests/`).
+
+2. **File Reader (`FileReaderTool`):**
+   - Safe inspection of files with optional line slicing (`offset`, `max_lines`), byte capping (`max_bytes`), and existence checking.
+   - Directory tree inspection and file searching (`path`, `recursive`, `pattern` glob filtering).
+
+3. **Patch Writer (`PatchWriterTool`):**
+   - Atomic file creation and full replacement with automatic parent directory generation.
+   - Targeted search-and-replace (`target`, `replacement`) validating that target substrings exist before modification.
+   - Safe deletion (`delete` action) within permitted allow-lists.
+   - Unified diff generation (`diff`) and direct `RunState` artifact recording (`applyToState()`).
+
+4. **Artisan Runner (`ArtisanRunnerTool`):**
+   - Executes only allow-listed Artisan commands (e.g. `make:model`, `make:migration`, `make:controller`, `make:class`, `make:enum`, `make:interface`, `make:trait`, `route:list`, `migrate:status`).
+   - Process-isolated via `Symfony\Component\Process\Process` (no raw shell string concatenation).
+   - Blocks dangerous flags (`--force`, `--drop-views`, `--drop-types`, `--seed`) and rejects all shell metacharacters (`|`, `;`, `&`, `` ` ``, `$`, `<`, `>`, `\n`).
+
+5. **Test Runner (`TestRunnerTool`):**
+   - Executes automated tests via `php artisan test` with configurable timeout handling.
+   - Returns structured output: `passed`, `exit_code`, `duration`, `summary`, and extracted `failures` array.
+
+6. **Git Command (`GitCommandTool`):**
+   - Safe, restricted Git operations: `status`, `current_branch`, `branch`, `create_branch`, `diff`, `stage_files`, and `commit`.
+   - Blocks destructive operations: `push --force`, `reset --hard`, `clean -fd`, and direct commits/checkouts on protected branches (`main`, `master`, `production`, `staging`).
+   - Redacts credentials in output (`https://[REDACTED_CREDENTIALS]@`).
+   - Direct `RunState` synchronization (`applyToState()`).
+
+7. **Dry-Run Mode Guarantee:**
+   - When `$state->guardrails['dry_run']` is `true`, mutating tools return simulated execution payloads without altering files, running commands, or modifying Git branches/commits.
+

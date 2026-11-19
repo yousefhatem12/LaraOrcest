@@ -23,9 +23,28 @@ class PathGuard
      */
     public function __construct(?string $projectRoot = null, ?array $denyPatterns = null, int $maxFileSize = 1_000_000)
     {
-        $this->projectRoot = $this->canonicalizeRoot($projectRoot ?: Config::basePath());
-        $this->denyPatterns = $denyPatterns ?: (array) Config::get('lara-orcest.sandbox.deny_paths', ['.env', '.git', 'vendor']);
-        $this->maxFileSize = $maxFileSize;
+        $rootConfig = Config::get('lara-orcest.tools.project_root', Config::get('lara-orcest.sandbox.project_root'));
+        $this->projectRoot = $this->canonicalizeRoot($projectRoot ?: ($rootConfig ?: Config::basePath()));
+
+        $configuredDeny = Config::get('lara-orcest.tools.deny_paths', Config::get('lara-orcest.sandbox.deny_paths'));
+        $defaultDeny = [
+            '.env',
+            '.env.*',
+            '.git',
+            '.git/*',
+            'vendor',
+            'node_modules',
+            'storage/logs',
+            'bootstrap/cache',
+            'storage/oauth*',
+            '*.key',
+            '*.pem',
+        ];
+
+        $this->denyPatterns = $denyPatterns ?: (array) ($configuredDeny ?: $defaultDeny);
+
+        $maxSizeConfig = Config::get('lara-orcest.tools.max_read_size', Config::get('lara-orcest.sandbox.max_file_size'));
+        $this->maxFileSize = $maxSizeConfig ? (int) $maxSizeConfig : $maxFileSize;
     }
 
     public function getProjectRoot(): string
@@ -34,7 +53,7 @@ class PathGuard
     }
 
     /**
-     * Validates and resolves an absolute or relative path within the project root.
+     * Validates and resolves an absolute or relative file path within the project root.
      *
      * @param  array<int, string>  $allowedPrefixes  Optional list of allowed relative prefixes (e.g. ['database/', 'app/Models/'])
      *
@@ -42,21 +61,136 @@ class PathGuard
      */
     public function resolveSafePath(string $path, array $allowedPrefixes = [], bool $mustExist = false): string
     {
+        $canonicalPath = $this->buildCanonicalPath($path);
+        $relativePath = $this->getRelativePath($canonicalPath);
+
+        // Check denylist patterns
+        if ($this->isDenied($relativePath) || $this->isDenied(basename($canonicalPath))) {
+            throw new RuntimeException("Access to denied path pattern blocked: [{$relativePath}]");
+        }
+
+        // Check allowed prefixes if provided
+        if (! empty($allowedPrefixes) && ! $this->matchesAllowedPrefixes($relativePath, $allowedPrefixes)) {
+            $allowedList = implode(', ', $allowedPrefixes);
+            throw new RuntimeException("Path [{$relativePath}] is outside allowed scope: [{$allowedList}]");
+        }
+
+        // Symlink escape check
+        if (file_exists($canonicalPath)) {
+            $real = realpath($canonicalPath);
+            if ($real === false || ! str_starts_with($real, $this->projectRoot)) {
+                throw new RuntimeException("Symlink escape detected for path: [{$canonicalPath}]");
+            }
+        } elseif ($mustExist) {
+            throw new RuntimeException("Target file does not exist: [{$canonicalPath}]");
+        }
+
+        return $canonicalPath;
+    }
+
+    /**
+     * Validates and resolves an existing or target directory path safely within project root.
+     *
+     * @param  array<int, string>  $allowedPrefixes
+     *
+     * @throws RuntimeException
+     */
+    public function resolveSafeDirectory(string $path, array $allowedPrefixes = [], bool $mustExist = true): string
+    {
+        $canonicalPath = $this->buildCanonicalPath($path);
+        $relativePath = $this->getRelativePath($canonicalPath);
+
+        if ($this->isDenied($relativePath) || $this->isDenied(basename($canonicalPath))) {
+            throw new RuntimeException("Access to denied directory pattern blocked: [{$relativePath}]");
+        }
+
+        if (! empty($allowedPrefixes) && ! $this->matchesAllowedPrefixes($relativePath, $allowedPrefixes)) {
+            $allowedList = implode(', ', $allowedPrefixes);
+            throw new RuntimeException("Directory [{$relativePath}] is outside allowed scope: [{$allowedList}]");
+        }
+
+        if (file_exists($canonicalPath)) {
+            $real = realpath($canonicalPath);
+            if ($real === false || ! str_starts_with($real, $this->projectRoot)) {
+                throw new RuntimeException("Symlink escape detected for directory: [{$canonicalPath}]");
+            }
+            if ($mustExist && ! is_dir($canonicalPath)) {
+                throw new RuntimeException("Path is not a directory: [{$canonicalPath}]");
+            }
+        } elseif ($mustExist) {
+            throw new RuntimeException("Target directory does not exist: [{$canonicalPath}]");
+        }
+
+        return $canonicalPath;
+    }
+
+    /**
+     * Checks whether a path satisfies all safety criteria without throwing.
+     *
+     * @param  array<int, string>  $allowedPrefixes
+     */
+    public function isSafe(string $path, array $allowedPrefixes = []): bool
+    {
+        try {
+            $this->resolveSafePath($path, $allowedPrefixes, mustExist: false);
+
+            return true;
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    /**
+     * Checks if a relative path matches any denied pattern.
+     */
+    public function isDenied(string $path): bool
+    {
+        $cleanPath = trim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $path), DIRECTORY_SEPARATOR);
+
+        if ($cleanPath === '') {
+            return false;
+        }
+
+        foreach ($this->denyPatterns as $pattern) {
+            if ($this->matchesPattern($cleanPath, $pattern)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public function getMaxFileSize(): int
+    {
+        return $this->maxFileSize;
+    }
+
+    public function getRelativePath(string $absolutePath): string
+    {
+        if (str_starts_with($absolutePath, $this->projectRoot)) {
+            $rel = ltrim(substr($absolutePath, strlen($this->projectRoot)), DIRECTORY_SEPARATOR);
+
+            return $rel === '' ? '.' : $rel;
+        }
+
+        return $absolutePath;
+    }
+
+    protected function buildCanonicalPath(string $path): string
+    {
         $normalized = $this->normalizePath($path);
 
-        // Disallow null bytes
         if (str_contains($normalized, "\0")) {
             throw new RuntimeException("Path contains null bytes: [{$path}]");
         }
 
-        // Check if inside project root
         $fullPath = str_starts_with($normalized, DIRECTORY_SEPARATOR)
             ? $normalized
             : $this->projectRoot . DIRECTORY_SEPARATOR . ltrim($normalized, DIRECTORY_SEPARATOR);
 
-        // Disallow path traversal using '..'
         $parts = explode(DIRECTORY_SEPARATOR, $fullPath);
         $resolvedParts = [];
+
         foreach ($parts as $part) {
             if ($part === '' || $part === '.') {
                 continue;
@@ -70,64 +204,30 @@ class PathGuard
                 $resolvedParts[] = $part;
             }
         }
+
         $canonicalPath = DIRECTORY_SEPARATOR . implode(DIRECTORY_SEPARATOR, $resolvedParts);
 
-        // Ensure canonical path begins with project root
         if (! str_starts_with($canonicalPath, $this->projectRoot)) {
             throw new RuntimeException("Path escapes project root: [{$canonicalPath}]");
-        }
-
-        // Relative path inside project root
-        $relativePath = ltrim(substr($canonicalPath, strlen($this->projectRoot)), DIRECTORY_SEPARATOR);
-
-        // Check denylist patterns
-        foreach ($this->denyPatterns as $pattern) {
-            if ($this->matchesPattern($relativePath, $pattern) || $this->matchesPattern(basename($canonicalPath), $pattern)) {
-                throw new RuntimeException("Access to denied path pattern [{$pattern}] blocked: [{$relativePath}]");
-            }
-        }
-
-        // Check allowed prefixes if provided
-        if (! empty($allowedPrefixes)) {
-            $isAllowed = false;
-            foreach ($allowedPrefixes as $prefix) {
-                $normalizedPrefix = trim($prefix, DIRECTORY_SEPARATOR);
-                if (str_starts_with($relativePath, $normalizedPrefix) || $relativePath === $normalizedPrefix) {
-                    $isAllowed = true;
-                    break;
-                }
-            }
-            if (! $isAllowed) {
-                $allowedList = implode(', ', $allowedPrefixes);
-                throw new RuntimeException("Path [{$relativePath}] is outside allowed scope: [{$allowedList}]");
-            }
-        }
-
-        // If file exists, check realpath to catch symlink escapes
-        if (file_exists($canonicalPath)) {
-            $real = realpath($canonicalPath);
-            if ($real === false || ! str_starts_with($real, $this->projectRoot)) {
-                throw new RuntimeException("Symlink escape detected for path: [{$canonicalPath}]");
-            }
-        } elseif ($mustExist) {
-            throw new RuntimeException("Target file does not exist: [{$canonicalPath}]");
         }
 
         return $canonicalPath;
     }
 
-    public function getMaxFileSize(): int
+    protected function matchesAllowedPrefixes(string $relativePath, array $allowedPrefixes): bool
     {
-        return $this->maxFileSize;
-    }
-
-    public function getRelativePath(string $absolutePath): string
-    {
-        if (str_starts_with($absolutePath, $this->projectRoot)) {
-            return ltrim(substr($absolutePath, strlen($this->projectRoot)), DIRECTORY_SEPARATOR);
+        if ($relativePath === '.' || $relativePath === '') {
+            return true;
         }
 
-        return $absolutePath;
+        foreach ($allowedPrefixes as $prefix) {
+            $normalizedPrefix = trim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $prefix), DIRECTORY_SEPARATOR);
+            if (str_starts_with($relativePath, $normalizedPrefix) || $relativePath === $normalizedPrefix) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     protected function canonicalizeRoot(string $root): string
@@ -147,7 +247,7 @@ class PathGuard
 
     protected function matchesPattern(string $path, string $pattern): bool
     {
-        $pattern = trim($pattern, DIRECTORY_SEPARATOR);
+        $pattern = trim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $pattern), DIRECTORY_SEPARATOR);
         if ($pattern === '') {
             return false;
         }
@@ -157,7 +257,7 @@ class PathGuard
             return true;
         }
 
-        // Wildcard fnmatch
+        // Wildcard match on full relative path or basename
         return fnmatch($pattern, $path, FNM_PATHNAME) || fnmatch($pattern, basename($path));
     }
 }

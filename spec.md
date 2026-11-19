@@ -477,55 +477,83 @@ Tools are the only mechanism through which agents inspect or modify the
 target Laravel project. Every tool must enforce its own authorization
 and scope checks; agent prompts are not a security boundary.
 
-### 7.1 `FileReaderTool`
+### 7.1 PathGuard (`Support\PathGuard`)
 
--   Read-only access to files inside the configured project root.
--   Reject path traversal and symlink escapes.
--   Enforce file-size limits and supported file types.
--   Never read `.env`, credentials, private keys, or other configured
-    secret paths.
--   Return bounded content with path and metadata.
+All filesystem-touching tools rely on `PathGuard` to enforce project boundary containment:
+- **Canonical resolution:** Resolves all relative paths against `projectRoot` (defaulting to Laravel `base_path()`).
+- **Traversal & Symlink protection:** Blocks path traversal (`../`) and detects symlink targets attempting to point outside the workspace.
+- **Global Denylist:** Blocks access to sensitive patterns and files:
+  - Environment files: `.env`, `.env.*`
+  - Version control: `.git`, `.git/**`
+  - Dependency caches: `vendor`, `vendor/**`, `node_modules`, `node_modules/**`
+  - Application caches & logs: `storage/logs/**`, `bootstrap/cache/**`
+  - Secrets & certificates: `*.key`, `*.pem`, `*.crt`
+- **Scoped Allow-lists:** Validates that file operations stay within per-tool or per-agent permitted path prefixes (e.g., `app/`, `database/`, `routes/`, `tests/`).
 
-### 7.2 `PatchWriterTool`
+### 7.2 `FileReaderTool`
 
--   Apply narrowly scoped patches rather than unrestricted writes where
-    possible.
--   Resolve and canonicalize paths before checking boundaries.
--   Enforce per-agent path allow-lists and global denylists.
--   Reject writes to `.env`, `.git/`, `vendor/`, and paths outside the
-    Laravel project root.
--   Record a before/after diff and artifact metadata.
--   Prefer atomic writes and preserve file permissions where practical.
+- **Single file inspection:**
+  - Reads text files up to configured `max_read_size` (default 500 KB) or per-call `max_bytes`.
+  - Supports line slicing via `offset` and `max_lines`.
+  - Detects non-existent paths gracefully (`exists: false`).
+  - Returns `path`, `content`, `total_lines`, `size_bytes`, `truncated`, and `exists`.
+- **Directory tree discovery:**
+  - When given a directory path, returns recursive or shallow entries.
+  - Supports glob/regex pattern filtering (e.g. `pattern: "*.php"`).
+  - Automatically filters out denied directories (`vendor`, `node_modules`, `.git`, `storage/logs`).
 
-### 7.3 `ArtisanRunnerTool`
+### 7.3 `PatchWriterTool`
 
--   Execute only explicitly allow-listed Artisan commands.
--   Prefer argument arrays/process APIs over shell-string concatenation.
--   Apply timeouts, working-directory restrictions, and output limits.
--   Examples of potentially allowed commands: approved `make:*` commands
-    and `migrate:status`.
--   Destructive commands such as migrations that alter data must be
-    disabled by default and require explicit configuration/approval.
+- **Actions:**
+  - `write`: Creates new files or completely overwrites existing files within allowed prefixes.
+  - `replace`: Performs targeted, deterministic search-and-replace using exact string matching (`target`, `replacement`), validating that the target exists before mutating.
+  - `delete`: Safely removes files within allowed prefixes.
+- **Atomic Operations & Diff Generation:**
+  - Automatically generates unified diffs (`+++ b/...`) for all modifications.
+  - Writes files atomically using temporary staging files.
+- **Dry-Run & State Integration:**
+  - Honors `$state->isDryRun()` / `dry_run: true`, returning planned diffs without modifying disk.
+  - `applyToState(RunState $state, array $params)` records created/updated/deleted artifacts in `RunState::$artifacts`.
 
-### 7.4 `TestRunnerTool`
+### 7.4 `ArtisanRunnerTool`
 
--   Run configured test commands, normally `php artisan test`.
--   Capture exit code, bounded stdout/stderr, duration, and failure
-    summary.
--   Apply execution timeouts and resource limits.
--   Treat a timeout or incomplete run as a failure, not a pass.
+- **Process Isolation:**
+  - Executes allow-listed commands via `Symfony\Component\Process\Process` (`[PHP_BINARY, 'artisan', $command, ...$args]`) inside `projectRoot`.
+  - Never concatenates raw shell strings.
+- **Allow-list Enforcement:**
+  - Default allowed commands: `make:migration`, `make:model`, `make:controller`, `make:request`, `make:test`, `make:factory`, `make:seeder`, `make:resource`, `make:policy`, `make:rule`, `make:class`, `make:enum`, `make:interface`, `make:trait`, `route:list`, `migrate:status`, `test`.
+  - Disallowed commands (e.g. `db:wipe`, `tinker`, `key:generate`) are strictly rejected.
+- **Argument & Flag Sanitization:**
+  - Blocks dangerous flags: `--force`, `--drop-views`, `--drop-types`, `--seed`.
+  - Blocks shell metacharacters: `|`, `;`, `&`, '`', `$`, `<`, `>`, `\n`, `\r`, and null bytes.
+- **Dry-run mode:** Returns simulation payload with `'dry_run' => true` without spawning child processes.
 
-### 7.5 `GitCommandTool`
+### 7.5 `TestRunnerTool`
 
--   Use a fixed command interface rather than accepting arbitrary shell
-    commands.
--   Support safe operations such as status, branch inspection/creation,
-    diff, scoped staging, and scoped commits.
--   Refuse force-push, destructive history rewrites, and
-    protected-branch mutations.
--   Detect dirty/untracked files before branch setup.
--   Never silently overwrite user changes.
--   Verify the resulting branch and commit after each operation.
+- **Automated Test Execution:**
+  - Executes configured test runner (default: `php artisan test --without-tty`).
+  - Configurable execution timeout (default: 120s).
+- **Structured Output Parsing:**
+  - Returns structured array: `passed` (boolean), `exit_code`, `duration`, `summary`, `output`, `failures` (extracted failure descriptions), and `timed_out` (boolean).
+  - Timeouts return `timed_out: true`, `exit_code: 124`, and `passed: false`.
+- **Dry-run mode:** Returns simulated test pass payload (`passed: true`, `dry_run: true`).
+
+### 7.6 `GitCommandTool`
+
+- **Safe Fixed Actions:**
+  - `status`: Returns `clean` boolean, `branch` name, `modified` files, and `untracked` files.
+  - `current_branch`: Returns active branch name.
+  - `branch`: Lists local branches.
+  - `create_branch`: Validates branch name format (`^[a-zA-Z0-9_\-\/]+$`), blocks creation/checkout of protected branches (`main`, `master`, `production`, `staging`), checks for dirty working tree unless `allow_dirty: true`.
+  - `diff`: Returns clean diff with credential redaction.
+  - `stage_files` / `add`: Stages files validating each path against `PathGuard`.
+  - `commit`: Commits staged changes; strictly blocks committing directly to protected branches.
+- **Destructive Command Blocking:**
+  - Strictly blocks `push --force`, `push -f`, `reset --hard`, `clean -f`, `clean -fd`, `clean -xdf`.
+- **Credential Redaction:**
+  - Automatically sanitizes tokens and credentials matching `https://*@` to `https://[REDACTED_CREDENTIALS]@`.
+- **State Synchronization:**
+  - `applyToState(RunState $state, array $params)` updates `RunState::$gitState` with `feature_branch`, `branch_created`, `commits`, and `status`.
 
 ## 8. Graph Engine & Execution Semantics
 

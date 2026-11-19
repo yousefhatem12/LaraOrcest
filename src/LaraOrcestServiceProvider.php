@@ -8,8 +8,15 @@ use Illuminate\Support\ServiceProvider;
 use Yousef\LaraOrcest\Commands\OrcestBuildCommand;
 use Yousef\LaraOrcest\Commands\OrcestStatusCommand;
 use Yousef\LaraOrcest\Contracts\CheckpointerContract;
+use Yousef\LaraOrcest\LLM\Drivers\OpenAiCompatibleHttpDriver;
 use Yousef\LaraOrcest\LLM\LlmManager;
 use Yousef\LaraOrcest\State\StateCheckpointer;
+use Yousef\LaraOrcest\Tools\ArtisanRunnerTool;
+use Yousef\LaraOrcest\Tools\FileReaderTool;
+use Yousef\LaraOrcest\Tools\GitCommandTool;
+use Yousef\LaraOrcest\Tools\PatchWriterTool;
+use Yousef\LaraOrcest\Tools\Support\PathGuard;
+use Yousef\LaraOrcest\Tools\TestRunnerTool;
 
 class LaraOrcestServiceProvider extends ServiceProvider
 {
@@ -29,6 +36,30 @@ class LaraOrcestServiceProvider extends ServiceProvider
 
         $this->app->singleton(OpenAiCompatibleHttpDriver::class, function ($app) {
             return $app->make(LlmManager::class)->driver('openai_compatible');
+        });
+
+        $this->app->singleton(PathGuard::class, function () {
+            return new PathGuard();
+        });
+
+        $this->app->singleton(FileReaderTool::class, function ($app) {
+            return new FileReaderTool($app->make(PathGuard::class));
+        });
+
+        $this->app->singleton(PatchWriterTool::class, function ($app) {
+            return new PatchWriterTool($app->make(PathGuard::class));
+        });
+
+        $this->app->singleton(ArtisanRunnerTool::class, function () {
+            return new ArtisanRunnerTool();
+        });
+
+        $this->app->singleton(TestRunnerTool::class, function () {
+            return new TestRunnerTool();
+        });
+
+        $this->app->singleton(GitCommandTool::class, function ($app) {
+            return new GitCommandTool(pathGuard: $app->make(PathGuard::class));
         });
 
         $this->app->singleton(CheckpointerContract::class, function () {

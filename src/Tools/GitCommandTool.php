@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Yousef\LaraOrcest\Contracts\ToolContract;
+use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Support\Config;
 use Yousef\LaraOrcest\Tools\Support\PathGuard;
 
@@ -23,6 +24,18 @@ class GitCommandTool implements ToolContract
     protected bool $dryRun;
 
     protected PathGuard $pathGuard;
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $blockedPatterns = [
+        'push --force',
+        'push -f',
+        'reset --hard',
+        'clean -f',
+        'clean -fd',
+        'clean -xdf',
+    ];
 
     /**
      * @param  array<int, string>|null  $protectedBranches
@@ -46,7 +59,7 @@ class GitCommandTool implements ToolContract
 
     public function getDescription(): string
     {
-        return 'Executes safe, restricted Git operations for branch isolation and milestone commits.';
+        return 'Executes safe, restricted Git operations for branch isolation and milestone commits without exposing secrets.';
     }
 
     public function setDryRun(bool $dryRun): self
@@ -56,6 +69,11 @@ class GitCommandTool implements ToolContract
         return $this;
     }
 
+    public function isDryRun(): bool
+    {
+        return $this->dryRun;
+    }
+
     public function getSchema(): array
     {
         return [
@@ -63,7 +81,7 @@ class GitCommandTool implements ToolContract
             'properties' => [
                 'action' => [
                     'type' => 'string',
-                    'enum' => ['status', 'current_branch', 'create_branch', 'diff', 'stage_files', 'commit'],
+                    'enum' => ['status', 'current_branch', 'branch', 'create_branch', 'diff', 'stage_files', 'add', 'commit'],
                     'description' => 'Safe Git operation to execute.',
                 ],
                 'branch' => [
@@ -73,11 +91,15 @@ class GitCommandTool implements ToolContract
                 'files' => [
                     'type' => 'array',
                     'items' => ['type' => 'string'],
-                    'description' => 'Specific file paths to stage in stage_files action.',
+                    'description' => 'Specific file paths to stage in stage_files or add action.',
                 ],
                 'message' => [
                     'type' => 'string',
                     'description' => 'Commit message for commit action.',
+                ],
+                'allow_dirty' => [
+                    'type' => 'boolean',
+                    'description' => 'Whether to permit branch creation when untracked files are present (default false).',
                 ],
             ],
             'required' => ['action'],
@@ -88,15 +110,67 @@ class GitCommandTool implements ToolContract
     {
         $action = (string) ($params['action'] ?? '');
 
+        // Security check against blocked destructive operations
+        foreach ($params as $paramValue) {
+            if (is_string($paramValue)) {
+                $this->validateNoBlockedOperations($paramValue);
+            }
+        }
+
         return match ($action) {
             'status' => $this->getStatus(),
             'current_branch' => $this->getCurrentBranch(),
-            'create_branch' => $this->createBranch((string) ($params['branch'] ?? '')),
+            'branch' => $this->listBranches(),
+            'create_branch' => $this->createBranch(
+                (string) ($params['branch'] ?? ''),
+                (bool) ($params['allow_dirty'] ?? false)
+            ),
             'diff' => $this->getDiff(),
-            'stage_files' => $this->stageFiles((array) ($params['files'] ?? [])),
+            'stage_files', 'add' => $this->stageFiles((array) ($params['files'] ?? [])),
             'commit' => $this->commit((string) ($params['message'] ?? '')),
             default => throw new InvalidArgumentException("Unsupported Git action: [{$action}]"),
         };
+    }
+
+    /**
+     * Executes the Git operation and updates the RunState git_state cleanly.
+     *
+     * @param  array<string, mixed>  $params
+     * @return array{state: RunState, result: array<string, mixed>}
+     */
+    public function applyToState(RunState $state, array $params): array
+    {
+        $originalDryRun = $this->dryRun;
+        $this->setDryRun($state->isDryRun());
+
+        try {
+            $result = $this->execute($params);
+
+            $gitState = $state->gitState;
+            $action = (string) ($params['action'] ?? '');
+
+            if ($action === 'create_branch') {
+                $gitState['feature_branch'] = $result['branch'];
+                $gitState['branch_created'] = $result['created'];
+            } elseif ($action === 'commit' && ! empty($result['commit_hash'])) {
+                $commits = $gitState['commits'] ?? [];
+                $commits[] = $result;
+                $gitState['commits'] = $commits;
+            }
+
+            if (isset($result['clean'])) {
+                $gitState['status'] = $result;
+            }
+
+            $state = $state->withGitState($gitState);
+
+            return [
+                'state' => $state,
+                'result' => $result,
+            ];
+        } finally {
+            $this->setDryRun($originalDryRun);
+        }
     }
 
     public function getStatus(): array
@@ -157,19 +231,53 @@ class GitCommandTool implements ToolContract
         return ['branch' => $branch, 'dry_run' => false];
     }
 
-    public function createBranch(string $branchName): array
+    public function listBranches(): array
+    {
+        if ($this->dryRun) {
+            return [
+                'branches' => ['main', 'dry-run-branch'],
+                'current' => 'dry-run-branch',
+                'dry_run' => true,
+            ];
+        }
+
+        $process = $this->runGit(['branch', '--list']);
+        $lines = explode("\n", trim($process->getOutput()));
+        $branches = [];
+        $current = 'unknown';
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            if (str_starts_with($line, '* ')) {
+                $name = substr($line, 2);
+                $current = $name;
+                $branches[] = $name;
+            } else {
+                $branches[] = $line;
+            }
+        }
+
+        return [
+            'branches' => $branches,
+            'current' => $current,
+            'dry_run' => false,
+        ];
+    }
+
+    public function createBranch(string $branchName, bool $allowDirty = false): array
     {
         $branchName = trim($branchName);
         if ($branchName === '') {
             throw new InvalidArgumentException('Branch name cannot be empty');
         }
 
-        // Validate branch name against safe naming rules
         if (! preg_match('/^[a-zA-Z0-9_\-\/]+$/', $branchName)) {
             throw new RuntimeException("Invalid branch name format: [{$branchName}]");
         }
 
-        // Disallow creating or switching directly to protected branch name
         if (in_array(strtolower($branchName), $this->protectedBranches, true)) {
             throw new RuntimeException("Direct checkout/creation of protected branch [{$branchName}] is forbidden");
         }
@@ -182,20 +290,16 @@ class GitCommandTool implements ToolContract
             ];
         }
 
-        // Refuse to create a new branch if working tree has untracked or modified files
         $status = $this->getStatus();
-        if (! $status['clean']) {
+        if (! $status['clean'] && ! $allowDirty) {
             throw new RuntimeException('Cannot create feature branch: Git working tree is dirty. Stash or commit existing changes first.');
         }
 
-        // Check if branch already exists
         $check = $this->runGit(['rev-parse', '--verify', 'refs/heads/' . $branchName], false);
         if ($check->isSuccessful()) {
-            // Checkout existing branch
             $this->runGit(['checkout', $branchName]);
             $created = false;
         } else {
-            // Create and checkout new branch
             $this->runGit(['checkout', '-b', $branchName]);
             $created = true;
         }
@@ -216,7 +320,7 @@ class GitCommandTool implements ToolContract
         $process = $this->runGit(['diff', 'HEAD']);
 
         return [
-            'diff' => mb_substr($process->getOutput(), 0, 10000),
+            'diff' => mb_substr($this->redactCredentials($process->getOutput()), 0, 10000),
             'dry_run' => false,
         ];
     }
@@ -230,7 +334,6 @@ class GitCommandTool implements ToolContract
         $safeFiles = [];
         foreach ($files as $file) {
             $raw = (string) $file;
-            // Verify path does not touch denied files (.env, etc.)
             $safePath = $this->pathGuard->resolveSafePath($raw, mustExist: false);
             $safeFiles[] = $this->pathGuard->getRelativePath($safePath);
         }
@@ -257,7 +360,6 @@ class GitCommandTool implements ToolContract
             throw new InvalidArgumentException('Commit message cannot be empty');
         }
 
-        // Verify we are not committing directly to a protected branch
         $current = $this->getCurrentBranch();
         if (in_array(strtolower($current['branch']), $this->protectedBranches, true)) {
             throw new RuntimeException("Committing directly to protected branch [{$current['branch']}] is forbidden. Create an isolated feature branch first.");
@@ -283,14 +385,34 @@ class GitCommandTool implements ToolContract
         ];
     }
 
+    protected function validateNoBlockedOperations(string $value): void
+    {
+        foreach ($this->blockedPatterns as $pattern) {
+            if (stripos($value, $pattern) !== false) {
+                throw new RuntimeException("Dangerous Git operation [{$pattern}] is strictly blocked.");
+            }
+        }
+    }
+
+    protected function redactCredentials(string $text): string
+    {
+        return preg_replace('/https?:\/\/[^@\s]+@/', 'https://[REDACTED_CREDENTIALS]@', $text) ?? $text;
+    }
+
     protected function runGit(array $arguments, bool $throwOnError = true): Process
     {
+        // Check arguments against blocked dangerous patterns
+        foreach ($arguments as $arg) {
+            $this->validateNoBlockedOperations((string) $arg);
+        }
+
         $process = new Process(['git', ...$arguments], $this->projectRoot);
         $process->run();
 
         if ($throwOnError && ! $process->isSuccessful()) {
             $err = trim($process->getErrorOutput() ?: $process->getOutput());
-            throw new RuntimeException("Git command [git " . implode(' ', $arguments) . "] failed: {$err}");
+            $sanitizedErr = $this->redactCredentials($err);
+            throw new RuntimeException("Git command [git " . implode(' ', $arguments) . "] failed: {$sanitizedErr}");
         }
 
         return $process;

@@ -136,20 +136,25 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Sandbox Boundaries & Path Restrictions
+    | Sandboxed Tools Configuration & Guardrails
     |--------------------------------------------------------------------------
     |
-    | Absolute paths and patterns that agents are strictly forbidden to access.
+    | Defines path boundaries, denylists, allowable Artisan commands, test
+    | runners, and execution limits for the Sandboxed Tools layer.
     |
     */
-    'sandbox' => [
+    'tools' => [
         'project_root' => env('LARA_ORCEST_PROJECT_ROOT', null),
-        'max_file_size' => (int) env('LARA_ORCEST_MAX_FILE_SIZE', 1_000_000), // 1MB
+        'max_read_size' => (int) env('LARA_ORCEST_MAX_FILE_SIZE', 1_000_000), // 1MB
         'deny_paths' => [
             '.env',
             '.env.*',
             '.git',
+            '.git/*',
             'vendor',
+            'node_modules',
+            'storage/logs',
+            'bootstrap/cache',
             'storage/oauth*',
             '*.key',
             '*.pem',
@@ -159,12 +164,61 @@ return [
             'make:model',
             'make:controller',
             'make:request',
+            'make:test',
             'make:factory',
             'make:seeder',
             'make:resource',
             'make:policy',
             'make:rule',
+            'make:class',
+            'make:enum',
+            'make:interface',
+            'make:trait',
+            'route:list',
+            'migrate:status',
+            'test',
+        ],
+        'test_command' => null, // null defaults to [PHP_BINARY, 'artisan', 'test', '--without-tty']
+        'process_timeout' => (int) env('LARA_ORCEST_PROCESS_TIMEOUT', 120),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Sandbox Boundaries (Backwards Compatibility Alias)
+    |--------------------------------------------------------------------------
+    */
+    'sandbox' => [
+        'project_root' => env('LARA_ORCEST_PROJECT_ROOT', null),
+        'max_file_size' => (int) env('LARA_ORCEST_MAX_FILE_SIZE', 1_000_000), // 1MB
+        'deny_paths' => [
+            '.env',
+            '.env.*',
+            '.git',
+            '.git/*',
+            'vendor',
+            'node_modules',
+            'storage/logs',
+            'bootstrap/cache',
+            'storage/oauth*',
+            '*.key',
+            '*.pem',
+        ],
+        'allowed_artisan_commands' => [
+            'make:migration',
+            'make:model',
+            'make:controller',
+            'make:request',
             'make:test',
+            'make:factory',
+            'make:seeder',
+            'make:resource',
+            'make:policy',
+            'make:rule',
+            'make:class',
+            'make:enum',
+            'make:interface',
+            'make:trait',
+            'route:list',
             'migrate:status',
             'test',
         ],
