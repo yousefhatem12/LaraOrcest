@@ -1,0 +1,58 @@
+{
+  "name": "yousef/lara-orcest",
+  "description": "Prompt-driven multi-agent orchestration for Laravel with specialized roles, stateful graph execution, automated tests, and safe Git workflows.",
+  "type": "library",
+  "license": "MIT",
+  "keywords": [
+    "laravel",
+    "ai",
+    "multi-agent",
+    "orchestration",
+    "agents",
+    "crewai",
+    "langgraph",
+    "llm"
+  ],
+  "authors": [
+    {
+      "name": "Yousef Hatem",
+      "email": "yousefhatem@gmail.com"
+    }
+  ],
+  "require": {
+    "php": "^8.2",
+    "illuminate/support": "^11.0|^12.0",
+    "illuminate/console": "^11.0|^12.0",
+    "illuminate/database": "^11.0|^12.0",
+    "illuminate/http": "^11.0|^12.0",
+    "illuminate/process": "^11.0|^12.0",
+    "symfony/process": "^7.0"
+  },
+  "require-dev": {
+    "orchestra/testbench": "^9.0|^10.0",
+    "phpunit/phpunit": "^10.5|^11.0",
+    "mockery/mockery": "^1.6"
+  },
+  "autoload": {
+    "psr-4": {
+      "Yousef\\LaraOrcest\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Yousef\\LaraOrcest\\Tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Yousef\\LaraOrcest\\LaraOrcestServiceProvider"
+      ],
+      "aliases": {
+        "Orchestrator": "Yousef\\LaraOrcest\\Facades\\Orchestrator"
+      }
+    }
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true
+}

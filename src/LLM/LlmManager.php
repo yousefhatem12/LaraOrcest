@@ -1,0 +1,75 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Yousef\LaraOrcest\LLM;
+
+use InvalidArgumentException;
+use Yousef\LaraOrcest\Contracts\LlmDriverContract;
+use Yousef\LaraOrcest\LLM\Drivers\AnthropicDriver;
+use Yousef\LaraOrcest\LLM\Drivers\FakeDriver;
+use Yousef\LaraOrcest\LLM\Drivers\GeminiDriver;
+use Yousef\LaraOrcest\LLM\Drivers\OllamaDriver;
+use Yousef\LaraOrcest\LLM\Drivers\OpenAiDriver;
+use Yousef\LaraOrcest\Support\Config;
+
+class LlmManager
+{
+    /**
+     * @var array<string, LlmDriverContract>
+     */
+    protected array $drivers = [];
+
+    protected ?string $defaultDriver = null;
+
+    public function __construct(?string $defaultDriver = null)
+    {
+        $this->defaultDriver = $defaultDriver;
+    }
+
+    public function driver(?string $name = null): LlmDriverContract
+    {
+        $name = $name ?: $this->getDefaultDriver();
+
+        if (isset($this->drivers[$name])) {
+            return $this->drivers[$name];
+        }
+
+        return $this->drivers[$name] = $this->createDriver($name);
+    }
+
+    public function extend(string $name, LlmDriverContract $driver): self
+    {
+        $this->drivers[$name] = $driver;
+
+        return $this;
+    }
+
+    public function getDefaultDriver(): string
+    {
+        if ($this->defaultDriver !== null) {
+            return $this->defaultDriver;
+        }
+
+        return (string) Config::get('lara-orcest.llm.default', 'fake');
+    }
+
+    public function setDefaultDriver(string $name): self
+    {
+        $this->defaultDriver = $name;
+
+        return $this;
+    }
+
+    protected function createDriver(string $name): LlmDriverContract
+    {
+        return match ($name) {
+            'fake' => new FakeDriver(),
+            'openai' => new OpenAiDriver(),
+            'anthropic' => new AnthropicDriver(),
+            'gemini' => new GeminiDriver(),
+            'ollama' => new OllamaDriver(),
+            default => throw new InvalidArgumentException("Unsupported LLM driver: [{$name}]"),
+        };
+    }
+}
