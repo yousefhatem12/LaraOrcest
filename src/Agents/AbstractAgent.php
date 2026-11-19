@@ -79,7 +79,16 @@ abstract class AbstractAgent implements AgentContract
         }
 
         // Call LLM with structured output schema
-        $response = $llm->chatStructured($messages, $this->getOutputSchema(), $options);
+        try {
+            $response = $llm->chatStructured($messages, $this->getOutputSchema(), $options);
+        } catch (\Throwable $e) {
+            throw new RuntimeException("Agent [{$this->getName()}] LLM execution failed: " . $e->getMessage(), (int) $e->getCode(), $e);
+        }
+
+        $data = $response['data'] ?? null;
+        if (! is_array($data)) {
+            throw new RuntimeException("Agent [{$this->getName()}] received malformed or empty structured output from LLM.");
+        }
 
         // Update token usage in state safely without breaking if usage is absent or mocked
         $usage = $response['usage'] ?? [];
@@ -89,7 +98,7 @@ abstract class AbstractAgent implements AgentContract
         $state = $state->recordTokenUsage(max(0, $promptTokens), max(0, $completionTokens));
 
         // Apply structured output and authorized tool effects
-        return $this->applyOutput($state, $response['data'], $authorizedTools);
+        return $this->applyOutput($state, $data, $authorizedTools);
     }
 
     /**

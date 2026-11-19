@@ -966,23 +966,23 @@ Implement in small, verifiable milestones:
 
 The first usable release is ready when:
 
--   [ ] The package installs from its standalone Composer repository.
--   [ ] Laravel package auto-discovery registers the service provider.
--   [ ] The facade and Artisan commands resolve correctly.
--   [ ] `RunState` serializes, persists, restores, and validates
+-   [x] The package installs from its standalone Composer repository.
+-   [x] Laravel package auto-discovery registers the service provider.
+-   [x] The facade and Artisan commands resolve correctly.
+-   [x] `RunState` serializes, persists, restores, and validates
     correctly.
--   [ ] All nine agents have explicit roles, goals, backstories, tool
+-   [x] All nine agents have explicit roles, goals, backstories, tool
     permissions, and output schemas.
--   [ ] Graph transitions work and all loops are bounded.
--   [ ] Tools enforce project-root, path, command, and Git safety
+-   [x] Graph transitions work and all loops are bounded.
+-   [x] Tools enforce project-root, path, command, and Git safety
     boundaries.
--   [ ] Dry-run performs no mutations.
--   [ ] QA results and reviewer decisions control finalization.
--   [ ] Fix attempts and total steps cannot exceed configured limits.
--   [ ] Secrets are excluded from state, logs, and artifacts.
--   [ ] Unit, security, integration, and end-to-end tests pass on
+-   [x] Dry-run performs no mutations.
+-   [x] QA results and reviewer decisions control finalization.
+-   [x] Fix attempts and total steps cannot exceed configured limits.
+-   [x] Secrets are excluded from state, logs, and artifacts.
+-   [x] Unit, security, integration, and end-to-end tests pass on
     supported targets.
--   [ ] A fresh Laravel application can use the package through Composer
+-   [x] A fresh Laravel application can use the package through Composer
     path-repository development.
 
 ------------------------------------------------------------------------

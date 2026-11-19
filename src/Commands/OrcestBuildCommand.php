@@ -11,17 +11,19 @@ use Yousef\LaraOrcest\State\RunState;
 class OrcestBuildCommand extends Command
 {
     protected $signature = 'orcest:build 
-                            {prompt : Feature requirement or prompt to orchestrate}
+                            {prompt? : Feature requirement or prompt to orchestrate}
+                            {--prompt= : Feature requirement or prompt (optional flag alternative)}
+                            {--resume= : Resume execution from an existing run ID checkpoint}
                             {--dry-run : Preview changes and plans without writing to disk or Git}
                             {--max-fix-attempts= : Maximum bug-fix loop retries}
                             {--max-steps= : Maximum graph execution steps}
-                            {--llm= : LLM driver to use (fake, openai, anthropic, gemini, ollama)}';
+                            {--llm= : LLM driver to use (openai_compatible, fake, openai, anthropic, gemini, ollama)}';
 
     protected $description = 'Orchestrate prompt-driven multi-agent development for Laravel';
 
     public function handle(Orchestrator $orchestrator): int
     {
-        $prompt = (string) $this->argument('prompt');
+        $resumeId = (string) ($this->option('resume') ?? '');
         $dryRun = (bool) $this->option('dry-run');
 
         $options = [
@@ -40,9 +42,6 @@ class OrcestBuildCommand extends Command
             $options['llm'] = (string) $this->option('llm');
         }
 
-        $this->components->info("Starting LaraOrcest execution" . ($dryRun ? " [DRY-RUN MODE]" : ""));
-        $this->line("Prompt: <comment>{$prompt}</comment>");
-
         $options['on_step'] = function (RunState $state, string $node, string $message) {
             $step = $state->guardrails['step_count'] ?? 0;
             $this->components->twoColumnDetail(
@@ -51,12 +50,34 @@ class OrcestBuildCommand extends Command
             );
         };
 
-        try {
-            $state = $orchestrator->run($prompt, $options);
-        } catch (\Throwable $e) {
-            $this->components->error("Execution error: " . $e->getMessage());
+        if ($resumeId !== '') {
+            $this->components->info("Resuming LaraOrcest run [{$resumeId}]" . ($dryRun ? " [DRY-RUN MODE]" : ""));
 
-            return self::FAILURE;
+            try {
+                $state = $orchestrator->resume($resumeId, $options);
+            } catch (\Throwable $e) {
+                $this->components->error("Resume error: " . $e->getMessage());
+
+                return self::FAILURE;
+            }
+        } else {
+            $prompt = (string) ($this->argument('prompt') ?: $this->option('prompt'));
+            if (trim($prompt) === '') {
+                $this->components->error('Please provide a prompt argument or use --prompt="Your requirement".');
+
+                return self::FAILURE;
+            }
+
+            $this->components->info("Starting LaraOrcest execution" . ($dryRun ? " [DRY-RUN MODE]" : ""));
+            $this->line("Prompt: <comment>{$prompt}</comment>");
+
+            try {
+                $state = $orchestrator->run($prompt, $options);
+            } catch (\Throwable $e) {
+                $this->components->error("Execution error: " . $e->getMessage());
+
+                return self::FAILURE;
+            }
         }
 
         $this->newLine();
@@ -65,6 +86,9 @@ class OrcestBuildCommand extends Command
             $this->components->info("✔ LaraOrcest completed successfully! [Run ID: {$state->runId}]");
         } else {
             $this->components->warn("⚠ LaraOrcest terminated with status: {$state->status} [Run ID: {$state->runId}]");
+            if ($state->getFailureReason()) {
+                $this->line("<fg=red>Reason:</> {$state->getFailureReason()}");
+            }
         }
 
         // Display Tasks

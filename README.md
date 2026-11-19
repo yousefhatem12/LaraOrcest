@@ -97,29 +97,51 @@ LARA_ORCEST_MODEL_BACKEND_AGENT=gpt-4o-mini
 ### Artisan CLI
 
 ```bash
-# Build a feature with the multi-agent pod
+# Build a feature with the multi-agent pod (argument)
 php artisan orcest:build "Create a task management API with projects and assignments"
 
-# Preview plan and files without touching disk or Git
+# Build with option flag alternative
+php artisan orcest:build --prompt="Add invoice billing system"
+
+# Preview plan, artifacts, and test runs without mutating disk or Git
 php artisan orcest:build "Add invoice billing" --dry-run
 
-# Inspect previous orchestration runs
+# Custom guardrails (max steps and fix attempts)
+php artisan orcest:build "Implement Stripe webhooks" --max-steps=30 --max-fix-attempts=2
+
+# Resume a previous execution run from its last checkpoint
+php artisan orcest:build --resume=run_a1b2c3d4e5f6
+
+# List recent orchestration runs
 php artisan orcest:status
+
+# Inspect detailed status, artifacts, and tests for a specific run
+php artisan orcest:status run_a1b2c3d4e5f6
 ```
 
 ### Facade
 
 ```php
-use Yousef\LaraOrcest\Facades\Orchestrator;
+use Yousef\LaraOrcest\Facades\Orcest;
+// Or: use Yousef\LaraOrcest\Facades\Orchestrator;
 
-$state = Orchestrator::run('Build a notification system for overdue invoices', [
+// Start a new orchestration run
+$state = Orcest::run('Build a notification system for overdue invoices', [
     'dry_run' => false,
     'max_fix_attempts' => 3,
+    'max_steps' => 40,
 ]);
 
 if ($state->isCompleted()) {
-    echo "Feature built successfully on branch: {$state->gitState['feature_branch']}";
+    echo "Feature built successfully on branch: {$state->gitState['feature_branch']}\n";
+    echo "Total files generated: " . count($state->artifacts) . "\n";
 }
+
+// Resume an existing run from its checkpoint
+$resumedState = Orcest::resume($state->runId);
+
+// Check run details or list recent runs
+$status = Orcest::status($state->runId);
 ```
 
 ## Sandboxed Tools Layer & Security Boundaries

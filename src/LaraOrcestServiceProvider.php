@@ -5,6 +5,15 @@ declare(strict_types=1);
 namespace Yousef\LaraOrcest;
 
 use Illuminate\Support\ServiceProvider;
+use Yousef\LaraOrcest\Agents\ArchitectAgent;
+use Yousef\LaraOrcest\Agents\BackendAgent;
+use Yousef\LaraOrcest\Agents\BusinessAnalystAgent;
+use Yousef\LaraOrcest\Agents\DatabaseAgent;
+use Yousef\LaraOrcest\Agents\FixerAgent;
+use Yousef\LaraOrcest\Agents\GitAgent;
+use Yousef\LaraOrcest\Agents\ProductManagerAgent;
+use Yousef\LaraOrcest\Agents\QaAgent;
+use Yousef\LaraOrcest\Agents\ReviewerAgent;
 use Yousef\LaraOrcest\Commands\OrcestBuildCommand;
 use Yousef\LaraOrcest\Commands\OrcestStatusCommand;
 use Yousef\LaraOrcest\Contracts\CheckpointerContract;
@@ -79,6 +88,17 @@ class LaraOrcestServiceProvider extends ServiceProvider
             );
         });
 
+        // Register 9 built-in agents
+        $this->app->bind(BusinessAnalystAgent::class, fn () => new BusinessAnalystAgent());
+        $this->app->bind(ProductManagerAgent::class, fn () => new ProductManagerAgent());
+        $this->app->bind(ArchitectAgent::class, fn () => new ArchitectAgent());
+        $this->app->bind(GitAgent::class, fn () => new GitAgent());
+        $this->app->bind(DatabaseAgent::class, fn () => new DatabaseAgent());
+        $this->app->bind(BackendAgent::class, fn () => new BackendAgent());
+        $this->app->bind(QaAgent::class, fn () => new QaAgent());
+        $this->app->bind(FixerAgent::class, fn () => new FixerAgent());
+        $this->app->bind(ReviewerAgent::class, fn () => new ReviewerAgent());
+
         $this->app->singleton('lara-orcest', function ($app) {
             return new Orchestrator(
                 llmManager: $app->make(LlmManager::class),
@@ -87,6 +107,7 @@ class LaraOrcestServiceProvider extends ServiceProvider
         });
 
         $this->app->alias('lara-orcest', Orchestrator::class);
+        $this->app->alias('lara-orcest', 'orcest');
     }
 
     /**
