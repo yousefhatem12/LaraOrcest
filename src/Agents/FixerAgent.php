@@ -97,6 +97,18 @@ class FixerAgent extends AbstractAgent
         $patchTool->setDryRun($state->isDryRun());
 
         $fixedFiles = (array) ($output['fixed_files'] ?? []);
+        $rootCause = trim((string) ($output['root_cause'] ?? ''));
+
+        // Record fixer resolution in metadata for project memory consolidation
+        if ($rootCause !== '') {
+            $resolutions = (array) ($state->metadata['fixer_resolutions'] ?? []);
+            $resolutions[] = [
+                'root_cause' => $rootCause,
+                'fixed_files' => array_column($fixedFiles, 'path'),
+                'timestamp' => date('c'),
+            ];
+            $state = $state->withMetadata(array_merge($state->metadata, ['fixer_resolutions' => $resolutions]));
+        }
 
         foreach ($fixedFiles as $file) {
             $path = (string) ($file['path'] ?? '');

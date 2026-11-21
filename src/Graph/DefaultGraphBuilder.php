@@ -13,6 +13,7 @@ use Yousef\LaraOrcest\Agents\GitAgent;
 use Yousef\LaraOrcest\Agents\ProductManagerAgent;
 use Yousef\LaraOrcest\Agents\QaAgent;
 use Yousef\LaraOrcest\Agents\ReviewerAgent;
+use Yousef\LaraOrcest\Agents\WebScrapingAgent;
 use Yousef\LaraOrcest\Contracts\CheckpointerContract;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Contracts\ToolContract;
@@ -32,13 +33,14 @@ class DefaultGraphBuilder
     public static function build(
         LlmDriverContract $llm,
         ?CheckpointerContract $checkpointer = null,
-        ?array $tools = null
+        ?array $tools = null,
+        bool $withScraper = false
     ): GraphEngine {
         $engine = new GraphEngine($checkpointer);
 
         $tools = $tools ?: self::defaultTools();
 
-        // 1. Instantiate 9 built-in agents
+        // 1. Instantiate built-in agents
         $agents = [
             new BusinessAnalystAgent(),
             new ProductManagerAgent(),
@@ -51,6 +53,10 @@ class DefaultGraphBuilder
             new ReviewerAgent(),
         ];
 
+        if ($withScraper) {
+            $agents[] = new WebScrapingAgent();
+        }
+
         // 2. Register agent nodes
         foreach ($agents as $agent) {
             $engine->addNode(new AgentGraphNode($agent, $tools, $llm, $checkpointer));
@@ -58,7 +64,19 @@ class DefaultGraphBuilder
 
         // 3. Register sequential edges
         $engine->addEdge('business_analyst', 'product_manager');
-        $engine->addEdge('product_manager', 'architect');
+
+        if ($withScraper) {
+            // From product_manager: route to web_scraping_agent if scraping target URLs present, else to architect
+            $engine->addEdge('product_manager', 'web_scraping_agent', fn (RunState $s) => $s->hasScrapingUrls(), 20);
+            $engine->addEdge('product_manager', 'architect', fn (RunState $s) => ! $s->hasScrapingUrls(), 10);
+
+            // From web_scraping_agent: complete if configured, otherwise proceed to architect
+            $engine->addEdge('web_scraping_agent', GraphEngine::TERMINAL_COMPLETED, fn (RunState $s) => $s->shouldStopAfterScraping(), 20);
+            $engine->addEdge('web_scraping_agent', 'architect', fn (RunState $s) => ! $s->shouldStopAfterScraping(), 10);
+        } else {
+            $engine->addEdge('product_manager', 'architect');
+        }
+
         $engine->addEdge('architect', 'git_agent');
         $engine->addEdge('git_agent', 'database_agent');
         $engine->addEdge('database_agent', 'backend_agent');
@@ -82,6 +100,37 @@ class DefaultGraphBuilder
         $engine->addEdge('reviewer_agent', 'fixer_agent', fn (RunState $s) => ! $s->isReviewApproved() && $s->canAttemptFix(), 10);
         // If revise AND cannot fix -> TERMINAL_FAILED
         $engine->addEdge('reviewer_agent', GraphEngine::TERMINAL_FAILED, fn (RunState $s) => ! $s->isReviewApproved() && ! $s->canAttemptFix(), 5);
+
+        return $engine;
+    }
+
+    /**
+     * Builds a dedicated standalone web scraping & data ingestion pipeline:
+     * business_analyst -> product_manager -> web_scraping_agent -> TERMINAL_COMPLETED
+     *
+     * @param  array<string, ToolContract>|null  $tools
+     */
+    public static function buildScrapingPipeline(
+        LlmDriverContract $llm,
+        ?CheckpointerContract $checkpointer = null,
+        ?array $tools = null
+    ): GraphEngine {
+        $engine = new GraphEngine($checkpointer);
+        $tools = $tools ?: self::defaultTools();
+
+        $agents = [
+            new BusinessAnalystAgent(),
+            new ProductManagerAgent(),
+            new WebScrapingAgent(),
+        ];
+
+        foreach ($agents as $agent) {
+            $engine->addNode(new AgentGraphNode($agent, $tools, $llm, $checkpointer));
+        }
+
+        $engine->addEdge('business_analyst', 'product_manager');
+        $engine->addEdge('product_manager', 'web_scraping_agent');
+        $engine->addEdge('web_scraping_agent', GraphEngine::TERMINAL_COMPLETED);
 
         return $engine;
     }

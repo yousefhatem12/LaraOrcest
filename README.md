@@ -90,6 +90,36 @@ Workflows in `LaraOrcest` execute deterministically through `GraphEngine`, evalu
 - **Automatic Reject Safeguard:** If automated tests fail in non-dry-run mode, `reviewer_agent` strictly refuses approval and enforces a revision cycle.
 - **Circuit Breaker Limits:** If `fix_attempts` reaches `max_fix_attempts` (default: 3) or graph execution steps exceed `max_steps` (default: 40), the engine terminates with `status = 'failed'`, recording the exact failure reason.
 
+### Parallel & Sub-Graph Execution
+`LaraOrcest` supports safe, deterministic concurrent sub-graph and parallel branch execution:
+- **`ParallelNode` & `SubGraphNode`:** Embed composite parallel waves or nested child graphs into any workflow.
+- **Deterministic Scheduling (`ParallelScheduler`):** Identifies independent tasks whose prerequisites (`depends_on`) are met and whose filesystem scopes (`scope_paths`) do not overlap, sorting by priority and task ID.
+- **Git Mutation Serialization:** Git branch creation and milestone commits are isolated in serialized single-task waves with repository-level file locking (`withGitLock`).
+- **Safe State Fan-In (`RunState::mergeParallelStates`):** Accumulates token usages, execution steps, and test diagnostics across branches while detecting and halting on conflicting file writes.
+
+### Human-in-the-Loop (HITL) Review & Autonomous Execution
+`LaraOrcest` allows development teams to insert explicit human review gates into the pipeline while preserving full autonomous capability:
+- **Interactive Review Gates (`--interactive`):**
+  - **`after_plan`:** Pauses execution after requirements and architecture design are formulated, allowing developers to review backlog tasks, schemas, and routes before any files or branches are modified.
+  - **`before_commit`:** Pauses execution after automated tests pass and code review is signed off, allowing pre-commit audit of diffs before final Git milestone commits.
+- **Autonomous Opt-Out (`--no-human-review`):** Users can explicitly bypass all human review gates per run or in configuration, guaranteeing uninterrupted automated execution.
+- **Ergonomic CLI Approvals (`orcest:approve`):** Easily approve or reject paused runs with optional feedback notes directly from the command line.
+
+### Project Memory & Codebase Index (Memorilla Architecture)
+Inspired by the core architectural principles of Memorilla, `LaraOrcest` provides a persistent codebase knowledge store and index natively adapted for PHP 8.2+ and Laravel:
+- **Separation of Indexing from Recall:** The persistent store (`.lara-orcest/memory.json`) maintains structured sections (`codebase_index`, `conventions`, `decisions`, `pitfalls`). Instead of bloating prompts with raw code or entire indices, task- and agent-scoped recall (`recallForContext`) selects only the most relevant, distilled context slice for the active agent and prompt.
+- **Distilled Summaries Paired with `FileReaderTool`:** Recalled memory provides high-level architectural index and patterns, while explicitly directing agents to use `FileReaderTool` for exact lines and file inspections.
+- **Incremental Growth Across Runs:** As features are built and reviewed, newly created models, controllers, and routes are indexed, technical decisions are archived, and bugs diagnosed/fixed by `FixerAgent` are captured as resolved pitfalls.
+- **Deduplication & Secret Sanitization:** Prevents duplicate entries across iterations, caps items to `max_items`, and strictly redacts API keys, bearer tokens, or secrets from disk storage.
+- **Context Budget & Opt-Out Controls:** Enforces a configurable character budget (`max_context_chars`, default: 2500) so agent turns stay lean. Can be opted out per-run with `--no-memory` or disabled via `config('lara-orcest.memory.enabled')`. Unaltered during `--dry-run`.
+
+### Web Scraping & Ingestion (`WebScrapingAgent`)
+`LaraOrcest` includes an automated web extraction and payload ingestion agent (`web_scraping_agent`) that executes within the graph after `business_analyst` and `product_manager`:
+- **Guided by BA & PM Context:** Leverages the domain entities and business rules formulated by `business_analyst` along with acceptance criteria formulated by `product_manager` to extract structured payloads from two external websites.
+- **Strict Two-URL Validation:** Requires exactly two valid HTTP/HTTPS URLs (`source_urls`), rejecting missing or invalid URLs early with clear diagnostics.
+- **Sanitization & SSRF Guardrails:** Automatically cleans noisy HTML (scripts, styling, SVG, comments, whitespace) and bounds payload characters. Strictly guards against SSRF, loopback, and cloud metadata targets (`169.254.169.254`).
+- **Dry-Run & Safe Dispatch:** Constructs the unified structured payload and records artifacts (`web_scraping/payload.json`). In `--dry-run` mode, skips external mutating HTTP requests while saving the preview payload; in standard runs, dispatches the payload via Laravel's `Http` client to the destination endpoint with configurable retries, redacting sensitive authorization headers in persistent state.
+
 ---
 
 ## Installation & Setup
@@ -157,6 +187,7 @@ LARA_ORCEST_MODEL_ARCHITECT=claude-3-5-sonnet
 LARA_ORCEST_MODEL_REVIEWER_AGENT=o3-mini
 LARA_ORCEST_MODEL_BACKEND_AGENT=gpt-4o-mini
 LARA_ORCEST_MODEL_DATABASE_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT=gpt-4o-mini
 ```
 
 ### Key Architectural Advantages
@@ -185,11 +216,32 @@ php artisan orcest:build "Add two-factor authentication" --dry-run
 # Custom guardrail bounds
 php artisan orcest:build "Implement invoice PDF generation" --max-steps=30 --max-fix-attempts=2
 
+# Human-in-the-Loop interactive review (pauses after plan & before commit)
+php artisan orcest:build "Create subscription billing" --interactive
+
+# Fully autonomous mode (explicitly bypasses all human review gates)
+php artisan orcest:build "Create subscription billing" --no-human-review
+
+# Bypass project memory recall and consolidation for a single run
+php artisan orcest:build "Create subscription billing" --no-memory
+
 # Route to a specific configured LLM driver (e.g. fake, openai, anthropic, ollama)
 php artisan orcest:build "Create user profile API" --llm=openai_compatible
 
 # Resume an interrupted or paused run from its last checkpoint
 php artisan orcest:build --resume=run_a1b2c3d4e5f6
+```
+
+#### Approve or Reject a Paused Run
+```bash
+# Approve a paused run at its active gate and resume execution
+php artisan orcest:approve run_a1b2c3d4e5f6
+
+# Approve with feedback or approval note
+php artisan orcest:approve run_a1b2c3d4e5f6 --note="Architecture approved by lead"
+
+# Reject and terminate execution cleanly without committing changes
+php artisan orcest:approve run_a1b2c3d4e5f6 --reject --note="Missing RBAC authorization policies"
 ```
 
 #### Inspect Execution Runs & Status
@@ -233,9 +285,38 @@ if ($state->isCompleted()) {
 // 2. Resume an existing run by its ID
 $resumedState = Orcest::resume('run_a1b2c3d4e5f6');
 
-// 3. Inspect run status programmatically
+// 3. Human-in-the-Loop: Approve or reject a paused run
+$approvedState = Orcest::approve('run_a1b2c3d4e5f6', 'Architecture looks good');
+// Or reject with feedback:
+// $rejectedState = Orcest::reject('run_a1b2c3d4e5f6', 'Requires additional validation');
+
+// 4. Inspect run status programmatically
 $runSummary = Orcest::status('run_a1b2c3d4e5f6');
 $allRecentRuns = Orcest::status(); // Array of recent run summaries
+
+// 5. Access project memory and codebase index
+$memory = Orcest::memory();
+$codebaseIndex = $memory->getIndex();
+$decisions = $memory->getDecisions();
+$pitfalls = $memory->getPitfalls();
+
+// 6. Web Scraping & Ingestion pipeline
+$scrapingState = Orcest::run('Extract product catalogs and normalize categories', [
+    'web_scraping' => [
+        'source_urls' => [
+            'https://vendor-alpha.com/products',
+            'https://vendor-beta.com/items',
+        ],
+        'target_endpoint' => 'https://api.my-app.com/api/v1/ingest',
+        'method' => 'POST',
+        'headers' => [
+            'Authorization' => 'Bearer secret-ingest-token',
+        ],
+        'stop_after_scraping' => true,
+    ],
+]);
+$results = $scrapingState->getScrapingResults();
+echo "Extraction status: " . $results['dispatch']['status'] . "\n";
 ```
 
 ---
@@ -337,6 +418,47 @@ return [
         'max_fix_attempts' => (int) env('LARA_ORCEST_MAX_FIX_ATTEMPTS', 3),
         'dry_run' => (bool) env('LARA_ORCEST_DRY_RUN', false),
         'process_timeout' => (int) env('LARA_ORCEST_PROCESS_TIMEOUT', 120),
+    ],
+
+    // Parallel & sub-graph execution
+    'graph' => [
+        'parallel' => [
+            'enabled' => (bool) env('LARA_ORCEST_PARALLEL_ENABLED', true),
+            'max_concurrency' => (int) env('LARA_ORCEST_MAX_CONCURRENCY', 4),
+        ],
+    ],
+
+    // Human-in-the-Loop review gates
+    'human_in_the_loop' => [
+        'enabled' => (bool) env('LARA_ORCEST_HITL_ENABLED', false),
+        'skip_review' => (bool) env('LARA_ORCEST_SKIP_HUMAN_REVIEW', false),
+        'gates' => [
+            'after_plan' => (bool) env('LARA_ORCEST_GATE_AFTER_PLAN', true),
+            'before_commit' => (bool) env('LARA_ORCEST_GATE_BEFORE_COMMIT', true),
+        ],
+    ],
+
+    // Project memory & codebase index (Memorilla architecture)
+    'memory' => [
+        'enabled' => (bool) env('LARA_ORCEST_MEMORY_ENABLED', true),
+        'path' => env('LARA_ORCEST_MEMORY_PATH', '.lara-orcest/memory.json'),
+        'max_context_chars' => (int) env('LARA_ORCEST_MEMORY_MAX_CHARS', 2500),
+        'max_items' => (int) env('LARA_ORCEST_MEMORY_MAX_ITEMS', 15),
+        'auto_index' => (bool) env('LARA_ORCEST_MEMORY_AUTO_INDEX', true),
+    ],
+
+    // Web scraping & ingestion
+    'web_scraping' => [
+        'timeout' => (int) env('LARA_ORCEST_SCRAPING_TIMEOUT', 30),
+        'retries' => (int) env('LARA_ORCEST_SCRAPING_RETRIES', 2),
+        'retry_sleep' => (int) env('LARA_ORCEST_SCRAPING_RETRY_SLEEP', 100),
+        'max_response_size' => (int) env('LARA_ORCEST_SCRAPING_MAX_SIZE', 2_000_000),
+        'max_content_chars' => (int) env('LARA_ORCEST_SCRAPING_MAX_CHARS', 25_000),
+        'allowed_schemes' => ['http', 'https'],
+        'allow_private_ips' => (bool) env('LARA_ORCEST_SCRAPING_ALLOW_PRIVATE_IPS', false),
+        'default_endpoint' => env('LARA_ORCEST_SCRAPING_DEFAULT_ENDPOINT'),
+        'default_method' => env('LARA_ORCEST_SCRAPING_DEFAULT_METHOD', 'POST'),
+        'user_agent' => env('LARA_ORCEST_SCRAPING_USER_AGENT', 'LaraOrcest-WebScraper/1.0 (+https://github.com/yousefhatem/LaraOrcest)'),
     ],
 
     // Git configuration

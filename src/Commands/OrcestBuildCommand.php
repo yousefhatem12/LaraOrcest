@@ -14,6 +14,12 @@ class OrcestBuildCommand extends Command
                             {prompt? : Feature requirement or prompt to orchestrate}
                             {--prompt= : Feature requirement or prompt (optional flag alternative)}
                             {--resume= : Resume execution from an existing run ID checkpoint}
+                            {--interactive : Enable interactive human-in-the-loop review and approval gates}
+                            {--no-human-review : Bypass human-in-the-loop review and execute autonomously}
+                            {--approve : Approve a paused run when resuming}
+                            {--reject : Reject a paused run when resuming}
+                            {--note= : Human review or approval notes}
+                            {--no-memory : Bypass project memory recall and consolidation}
                             {--dry-run : Preview changes and plans without writing to disk or Git}
                             {--max-fix-attempts= : Maximum bug-fix loop retries}
                             {--max-steps= : Maximum graph execution steps}
@@ -40,6 +46,32 @@ class OrcestBuildCommand extends Command
 
         if ($this->option('llm')) {
             $options['llm'] = (string) $this->option('llm');
+        }
+
+        if ($this->option('interactive')) {
+            $options['interactive'] = true;
+        }
+
+        if ($this->option('no-human-review')) {
+            $options['no_human_review'] = true;
+            $options['skip_review'] = true;
+        }
+
+        if ($this->option('approve')) {
+            $options['decision'] = 'approved';
+        }
+
+        if ($this->option('reject')) {
+            $options['decision'] = 'rejected';
+        }
+
+        if ($this->option('note')) {
+            $options['note'] = (string) $this->option('note');
+        }
+
+        if ($this->option('no-memory')) {
+            $options['no_memory'] = true;
+            $options['memory_enabled'] = false;
         }
 
         $options['on_step'] = function (RunState $state, string $node, string $message) {
@@ -81,6 +113,33 @@ class OrcestBuildCommand extends Command
         }
 
         $this->newLine();
+
+        if ($state->isPaused()) {
+            $pausedGate = $state->getPausedGate() ?? 'review_gate';
+            $this->components->warn("⏸ LaraOrcest paused for human review at gate: [{$pausedGate}] [Run ID: {$state->runId}]");
+
+            $context = $state->getPauseContext();
+            if (! empty($context['summary'])) {
+                $this->line("<comment>Review Summary:</comment> {$context['summary']}");
+            }
+            if (! empty($context['artifacts'])) {
+                $this->line("<comment>Proposed Artifacts:</comment> " . implode(', ', (array) $context['artifacts']));
+            }
+            if (! empty($context['backlog_count'])) {
+                $this->line("<comment>Planned Tasks:</comment> {$context['backlog_count']} tasks");
+            }
+
+            $this->newLine();
+            $this->components->info("To approve and resume execution:");
+            $this->line("  <fg=green>php artisan orcest:approve {$state->runId}</>");
+            $this->line("  <fg=gray># Or with note:  php artisan orcest:approve {$state->runId} --note=\"Approved\"</>");
+            $this->line("  <fg=gray># Or via build:  php artisan orcest:build --resume={$state->runId} --approve</>");
+            $this->newLine();
+            $this->components->info("To reject and halt:");
+            $this->line("  <fg=red>php artisan orcest:approve {$state->runId} --reject --note=\"Reason\"</>");
+
+            return self::SUCCESS;
+        }
 
         if ($state->isCompleted()) {
             $this->components->info("✔ LaraOrcest completed successfully! [Run ID: {$state->runId}]");

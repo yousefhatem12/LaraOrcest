@@ -14,13 +14,17 @@ use Yousef\LaraOrcest\Agents\GitAgent;
 use Yousef\LaraOrcest\Agents\ProductManagerAgent;
 use Yousef\LaraOrcest\Agents\QaAgent;
 use Yousef\LaraOrcest\Agents\ReviewerAgent;
+use Yousef\LaraOrcest\Agents\WebScrapingAgent;
+use Yousef\LaraOrcest\Commands\OrcestApproveCommand;
 use Yousef\LaraOrcest\Commands\OrcestBuildCommand;
 use Yousef\LaraOrcest\Commands\OrcestStatusCommand;
 use Yousef\LaraOrcest\Contracts\CheckpointerContract;
+use Yousef\LaraOrcest\Contracts\ProjectMemoryContract;
 use Yousef\LaraOrcest\Graph\DefaultGraphBuilder;
 use Yousef\LaraOrcest\Graph\GraphEngine;
 use Yousef\LaraOrcest\LLM\Drivers\OpenAiCompatibleHttpDriver;
 use Yousef\LaraOrcest\LLM\LlmManager;
+use Yousef\LaraOrcest\Memory\ProjectMemoryStore;
 use Yousef\LaraOrcest\State\StateCheckpointer;
 use Yousef\LaraOrcest\Tools\ArtisanRunnerTool;
 use Yousef\LaraOrcest\Tools\FileReaderTool;
@@ -81,6 +85,16 @@ class LaraOrcestServiceProvider extends ServiceProvider
             return $app->make(StateCheckpointer::class);
         });
 
+        $this->app->singleton(ProjectMemoryStore::class, function ($app) {
+            return new ProjectMemoryStore(
+                pathGuard: $app->make(PathGuard::class)
+            );
+        });
+
+        $this->app->singleton(ProjectMemoryContract::class, function ($app) {
+            return $app->make(ProjectMemoryStore::class);
+        });
+
         $this->app->bind(GraphEngine::class, function ($app) {
             return DefaultGraphBuilder::build(
                 llm: $app->make(LlmManager::class)->driver(),
@@ -98,6 +112,7 @@ class LaraOrcestServiceProvider extends ServiceProvider
         $this->app->bind(QaAgent::class, fn () => new QaAgent());
         $this->app->bind(FixerAgent::class, fn () => new FixerAgent());
         $this->app->bind(ReviewerAgent::class, fn () => new ReviewerAgent());
+        $this->app->bind(WebScrapingAgent::class, fn () => new WebScrapingAgent());
 
         $this->app->singleton('lara-orcest', function ($app) {
             return new Orchestrator(
@@ -130,6 +145,7 @@ class LaraOrcestServiceProvider extends ServiceProvider
             $this->commands([
                 OrcestBuildCommand::class,
                 OrcestStatusCommand::class,
+                OrcestApproveCommand::class,
             ]);
         }
     }

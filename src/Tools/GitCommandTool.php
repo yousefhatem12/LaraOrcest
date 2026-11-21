@@ -269,46 +269,48 @@ class GitCommandTool implements ToolContract
 
     public function createBranch(string $branchName, bool $allowDirty = false): array
     {
-        $branchName = trim($branchName);
-        if ($branchName === '') {
-            throw new InvalidArgumentException('Branch name cannot be empty');
-        }
+        return $this->withGitLock(function () use ($branchName, $allowDirty) {
+            $branchName = trim($branchName);
+            if ($branchName === '') {
+                throw new InvalidArgumentException('Branch name cannot be empty');
+            }
 
-        if (! preg_match('/^[a-zA-Z0-9_\-\/]+$/', $branchName)) {
-            throw new RuntimeException("Invalid branch name format: [{$branchName}]");
-        }
+            if (! preg_match('/^[a-zA-Z0-9_\-\/]+$/', $branchName)) {
+                throw new RuntimeException("Invalid branch name format: [{$branchName}]");
+            }
 
-        if (in_array(strtolower($branchName), $this->protectedBranches, true)) {
-            throw new RuntimeException("Direct checkout/creation of protected branch [{$branchName}] is forbidden");
-        }
+            if (in_array(strtolower($branchName), $this->protectedBranches, true)) {
+                throw new RuntimeException("Direct checkout/creation of protected branch [{$branchName}] is forbidden");
+            }
 
-        if ($this->dryRun) {
+            if ($this->dryRun) {
+                return [
+                    'branch' => $branchName,
+                    'created' => true,
+                    'dry_run' => true,
+                ];
+            }
+
+            $status = $this->getStatus();
+            if (! $status['clean'] && ! $allowDirty) {
+                throw new RuntimeException('Cannot create feature branch: Git working tree is dirty. Stash or commit existing changes first.');
+            }
+
+            $check = $this->runGit(['rev-parse', '--verify', 'refs/heads/' . $branchName], false);
+            if ($check->isSuccessful()) {
+                $this->runGit(['checkout', $branchName]);
+                $created = false;
+            } else {
+                $this->runGit(['checkout', '-b', $branchName]);
+                $created = true;
+            }
+
             return [
                 'branch' => $branchName,
-                'created' => true,
-                'dry_run' => true,
+                'created' => $created,
+                'dry_run' => false,
             ];
-        }
-
-        $status = $this->getStatus();
-        if (! $status['clean'] && ! $allowDirty) {
-            throw new RuntimeException('Cannot create feature branch: Git working tree is dirty. Stash or commit existing changes first.');
-        }
-
-        $check = $this->runGit(['rev-parse', '--verify', 'refs/heads/' . $branchName], false);
-        if ($check->isSuccessful()) {
-            $this->runGit(['checkout', $branchName]);
-            $created = false;
-        } else {
-            $this->runGit(['checkout', '-b', $branchName]);
-            $created = true;
-        }
-
-        return [
-            'branch' => $branchName,
-            'created' => $created,
-            'dry_run' => false,
-        ];
+        });
     }
 
     public function getDiff(): array
@@ -327,62 +329,92 @@ class GitCommandTool implements ToolContract
 
     public function stageFiles(array $files): array
     {
-        if (empty($files)) {
-            return ['staged' => [], 'dry_run' => $this->dryRun];
-        }
+        return $this->withGitLock(function () use ($files) {
+            if (empty($files)) {
+                return ['staged' => [], 'dry_run' => $this->dryRun];
+            }
 
-        $safeFiles = [];
-        foreach ($files as $file) {
-            $raw = (string) $file;
-            $safePath = $this->pathGuard->resolveSafePath($raw, mustExist: false);
-            $safeFiles[] = $this->pathGuard->getRelativePath($safePath);
-        }
+            $safeFiles = [];
+            foreach ($files as $file) {
+                $raw = (string) $file;
+                $safePath = $this->pathGuard->resolveSafePath($raw, mustExist: false);
+                $safeFiles[] = $this->pathGuard->getRelativePath($safePath);
+            }
 
-        if ($this->dryRun) {
+            if ($this->dryRun) {
+                return [
+                    'staged' => $safeFiles,
+                    'dry_run' => true,
+                ];
+            }
+
+            $this->runGit(['add', '--', ...$safeFiles]);
+
             return [
                 'staged' => $safeFiles,
-                'dry_run' => true,
+                'dry_run' => false,
             ];
-        }
-
-        $this->runGit(['add', '--', ...$safeFiles]);
-
-        return [
-            'staged' => $safeFiles,
-            'dry_run' => false,
-        ];
+        });
     }
 
     public function commit(string $message): array
     {
-        $message = trim($message);
-        if ($message === '') {
-            throw new InvalidArgumentException('Commit message cannot be empty');
-        }
+        return $this->withGitLock(function () use ($message) {
+            $message = trim($message);
+            if ($message === '') {
+                throw new InvalidArgumentException('Commit message cannot be empty');
+            }
 
-        $current = $this->getCurrentBranch();
-        if (in_array(strtolower($current['branch']), $this->protectedBranches, true)) {
-            throw new RuntimeException("Committing directly to protected branch [{$current['branch']}] is forbidden. Create an isolated feature branch first.");
-        }
+            $current = $this->getCurrentBranch();
+            if (in_array(strtolower($current['branch']), $this->protectedBranches, true)) {
+                throw new RuntimeException("Committing directly to protected branch [{$current['branch']}] is forbidden. Create an isolated feature branch first.");
+            }
 
-        if ($this->dryRun) {
+            if ($this->dryRun) {
+                return [
+                    'committed' => true,
+                    'message' => $message,
+                    'commit_hash' => 'dry-run-hash',
+                    'dry_run' => true,
+                ];
+            }
+
+            $this->runGit(['commit', '-m', $message]);
+            $hashProcess = $this->runGit(['rev-parse', '--short', 'HEAD']);
+
             return [
                 'committed' => true,
                 'message' => $message,
-                'commit_hash' => 'dry-run-hash',
-                'dry_run' => true,
+                'commit_hash' => trim($hashProcess->getOutput()),
+                'dry_run' => false,
             ];
+        });
+    }
+
+    /**
+     * Serializes mutating Git operations using an exclusive file lock on the repository.
+     */
+    protected function withGitLock(callable $operation): mixed
+    {
+        $gitDir = $this->projectRoot . '/.git';
+        if (! is_dir($gitDir)) {
+            return $operation();
         }
 
-        $this->runGit(['commit', '-m', $message]);
-        $hashProcess = $this->runGit(['rev-parse', '--short', 'HEAD']);
+        $lockFile = $gitDir . '/lara_orcest_git.lock';
+        $handle = @fopen($lockFile, 'c+');
+        if (! $handle) {
+            return $operation();
+        }
 
-        return [
-            'committed' => true,
-            'message' => $message,
-            'commit_hash' => trim($hashProcess->getOutput()),
-            'dry_run' => false,
-        ];
+        try {
+            flock($handle, LOCK_EX);
+
+            return $operation();
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
     }
 
     protected function validateNoBlockedOperations(string $value): void

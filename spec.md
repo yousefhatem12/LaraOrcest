@@ -208,7 +208,8 @@ lara-orcest/
 │   │   ├── BackendAgent.php
 │   │   ├── QaAgent.php
 │   │   ├── FixerAgent.php
-│   │   └── ReviewerAgent.php
+│   │   ├── ReviewerAgent.php
+│   │   └── WebScrapingAgent.php
 │   ├── Graph/
 │   │   ├── GraphEngine.php
 │   │   ├── EdgeRule.php
@@ -293,6 +294,12 @@ state must serialize cleanly through `toArray()` and be restored through
                                                   fix attempts, maximum fix
                                                   attempts, dry-run flag, and
                                                   token usage.
+
+  `scraping_results`      `array`                 Web scraping extraction summary,
+                                                  per-source scraped data, unified
+                                                  payload, and destination endpoint
+                                                  dispatch status. Produced by
+                                                  `web_scraping_agent`.
   ---------------------------------------------------------------------------
 
 ### State requirements
@@ -471,6 +478,31 @@ diff/status operations.
 **State output:** `reviews` (`approved` or `revise`, with actionable
 findings)
 
+### 6.10 Web Scraping & Ingestion Agent (`web_scraping_agent`)
+
+**Role:** Web Data Extraction & Ingestion Specialist
+
+**Goal:** Extract structured domain entities from two target website URLs, guided by business rules in `requirements_spec` (Business Analyst) and acceptance criteria in `backlog` (Product Manager), and transmit the validated payload to an external destination endpoint.
+
+**Backstory:** Rigorous data engineer and web extraction specialist who cleans unstructured HTML/text/JSON, normalizes entities into consistent schemas, guards against SSRF / internal IP leakage, redacts sensitive headers, and enforces dry-run safety before dispatching payloads.
+
+**Input Requirements:**
+- Exactly two valid HTTP/HTTPS URLs (`source_urls` / `urls`).
+- Target destination endpoint (`target_endpoint` / `endpoint_url`) with HTTP method (`POST`, `PUT`, `PATCH`, `GET`) and optional headers.
+- Contextual guidance from `requirements_spec` and `backlog`.
+
+**Allowed tools:**
+- `FileReaderTool` — inspect workspace schemas and local mapping fixtures.
+- Native HTTP Client — safe fetching and dispatching via Laravel's `Illuminate\Support\Facades\Http`.
+
+**Safety & Guardrails:**
+- **URL & SSRF Protection:** Validates schemes (`http`/`https`), rejects non-HTTP schemes (e.g., `file://`, `ftp://`), and blocks private/loopback and cloud metadata IPs (`169.254.169.254`, `127.0.0.1`, `10.*`, `192.168.*`, `172.16-31.*`) unless `allow_private_ips` is explicitly set.
+- **HTML Sanitization:** Strips `<script>`, `<style>`, `<svg>`, comments, normalizes whitespace, and truncates raw responses to `max_content_chars` (default: 25,000) to keep prompt context bounded.
+- **Dry-run Compliance:** In `--dry-run` mode, performs full extraction and constructs the outbound payload without issuing mutating HTTP requests to the target destination.
+- **Header Sanitization:** Redacts Authorization, Token, and Secret headers when persisting request summaries in `RunState`.
+
+**State output:** `scraping_results` (source URLs, extraction summary, normalized items, dispatch status, HTTP response status, error logs) and recorded artifact `web_scraping/payload.json`.
+
 ## 7. Tools Layer
 
 Tools are the only mechanism through which agents inspect or modify the
@@ -618,6 +650,96 @@ business_analyst -> product_manager -> architect -> git_agent -> database_agent 
 - **Crash Recovery & Resume:** Calling `Orchestrator::resume($runId)` restores the state from its last checkpoint, validates guardrails, and resumes execution from `$state->currentNode`.
 - **Zero Secret Leakage:** `RunState::toArray()` automatically filters out sensitive keys (`api_key`, `token`, `secret`, `password`, `authorization`) before serialization.
 
+### 8.4 Parallel / Sub-Graph Execution & Deterministic Scheduling
+
+`LaraOrcest` provides safe, deterministic parallel and sub-graph execution for independent, non-conflicting tasks or branches, merging their state updates cleanly before downstream nodes proceed.
+
+#### 1. Architecture & Node Primitives
+- **`ParallelNode` (`src/Graph/Nodes/ParallelNode.php`):** Composite graph node encapsulating multiple independent branches. Executes runnable branches across scheduled waves, isolating per-branch outputs in forked `RunState` instances and fanning in via `RunState::mergeParallelStates()`.
+- **`SubGraphNode` (`src/Graph/Nodes/SubGraphNode.php`):** Wraps an embedded `GraphEngine` instance as a single node in a parent graph, enabling hierarchical modular pipelines while maintaining checkpointing and step logging.
+- **Convenience Engine APIs:** `GraphEngine::executeParallel()`, `GraphEngine::executeParallelTasks()`, and `GraphEngine::runSubGraph()`.
+
+#### 2. Dependency & Scope Conflict Detection
+- **Metadata:** Tasks, backlog items, and technical plan items define `depends_on` (prerequisite task IDs) and `scope_paths` (target filesystem resources/prefixes).
+- **`ScopeConflictDetector` (`src/Graph/ScopeConflictDetector.php`):**
+  - Canonical path normalization (slashes, redundant segments).
+  - Exact match overlap detection.
+  - Directory containment overlap (`app/Models` contains `app/Models/User.php`).
+  - Wildcard / glob matching (`routes/*.php` matches `routes/api.php`).
+  - Identifies overlapping mutations across parallel branches.
+
+#### 3. Deterministic Wave Scheduling (`ParallelScheduler`)
+- Evaluates candidate tasks whose `depends_on` prerequisites are fully satisfied.
+- Sorts candidates deterministically: **Priority descending**, then **Task ID ascending** for 100% reproducible order.
+- Greedily selects non-conflicting tasks whose `scope_paths` do not overlap with other tasks in the batch, up to configured `max_concurrency`.
+- Tasks with conflicting scopes are serialized into consecutive execution waves.
+- Detects circular dependencies via topological DFS traversal and throws `CyclicDependencyException`.
+
+#### 4. Git Mutation Serialization & Repository Locking
+- Git operations (`GitAgent` branch creation, file staging, and milestone commits) mutate `.git/index` and the working tree.
+- Tasks involving Git mutations are strictly classified as **exclusive**: `ParallelScheduler` isolates them in single-task execution waves so they never run concurrently with other tasks.
+- `GitCommandTool` enforces process-level mutual exclusion via `withGitLock()` on `.git/lara_orcest_git.lock`, ensuring working-tree integrity.
+
+#### 5. Safe State Fan-In & Deterministic Merge
+- **Branch Isolation:** Each parallel branch executes on a forked state (`RunState::forkBranch()`), tracking branch-specific delta metrics.
+- **Artifact Conflict Safety:** `RunState::mergeParallelStates()` verifies that no two branches mutated the same file path. If collisions occur, execution terminates safely with detailed diagnostic messages, or throws `StateMergeConflictException` when strict mode is configured.
+- **Guardrails & Token Accumulation:** Delta prompt tokens, completion tokens, costs, execution steps, and fix attempts are accumulated into the parent state without race conditions or lost progress.
+- **Test Results & Reviews:** If any branch fails tests, `areTestsPassing()` returns false and all failure outputs are preserved with branch annotations. Reviews from all branches are aggregated chronologically.
+- **Backlog Status:** Tasks completed by parallel branches are updated to `status = 'completed'` in the unified backlog.
+
+### 8.5 Human-in-the-Loop (HITL) Review, Pause Gates & Autonomous Opt-Out
+
+`LaraOrcest` provides native **Human-in-the-Loop** governance, allowing development teams to pause execution at critical milestones for human inspection and explicit approval, while empowering users to completely opt out of human review (`--no-human-review`) for fully autonomous execution.
+
+#### 1. Review Gates Architecture
+- **`after_plan` (Planning Gate):** Pauses execution immediately after the `architect` produces `requirements_spec`, prioritized `backlog`, and `technical_plan`, before code generation or Git mutations begin. Developers can verify schemas, endpoints, and task slices.
+- **`before_commit` (Pre-Commit Gate):** Pauses execution after automated tests pass and `reviewer_agent` sign-off, right before the automated Git milestone commit (`finalizeRun`). Developers inspect generated artifacts and diffs before changes are finalized in Git.
+- **Custom Node Gates:** Any graph node can be configured as a pause gate via `after_node:{node_key}`.
+
+#### 2. User-Controlled Review Mode & Opt-Out Guarantees
+- **Autonomous by Default:** Human-in-the-loop review is disabled by default (`human_in_the_loop.enabled = false`), ensuring unattended CLI and pipeline runs execute smoothly without pauses.
+- **Opt-In Interactivity:** Passing `--interactive` enables pause gates for that specific execution run.
+- **Explicit Autonomous Opt-Out (`--no-human-review`):** Passing `--no-human-review` (or configuring `skip_review: true`) guarantees that all human review gates are completely bypassed, even if interactive mode is requested or HITL is globally enabled.
+
+#### 3. State Schema & Decision Tracking
+- **Metadata Isolation:** HITL state is persisted in `RunState::$metadata['human_in_the_loop']` with `enabled`, `skip_review`, `gates`, `paused_gate`, `pause_context`, and `decisions`.
+- **Review Trail:** Human approval and rejection determinations are recorded in `RunState::$reviews`, preserving feedback and review notes without leaking credentials or environment secrets.
+- **Zero Redundant Execution:** When a paused run is approved, execution resumes cleanly from the subsequent node without re-executing already completed nodes.
+
+#### 4. Ergonomic Approval & Rejection Flow
+- **CLI Commands:**
+  - `php artisan orcest:build "..." --interactive` (runs until first active gate and pauses).
+  - `php artisan orcest:approve {run_id} [--note="..."]` (approves active gate and resumes execution).
+  - `php artisan orcest:approve {run_id} --reject [--note="..."]` (rejects and halts cleanly with failure status).
+  - `php artisan orcest:build --resume={run_id} --approve` (alternative resume syntax).
+- **Facade API:**
+  - `Orcest::approve(string $runId, ?string $notes = null)`
+  - `Orcest::reject(string $runId, ?string $notes = null)`
+
+### 8.6 Project Memory & Codebase Index (Memorilla Architecture)
+
+LaraOrcest implements a persistent, compact project-level memory and codebase index inspired by the architectural principles of Memorilla, natively adapted to PHP 8.2+ and Laravel 11/12 without requiring Python, embeddings, or GPU training.
+
+#### 1. Memorilla-Inspired Core Principles & Adaptation
+- **Separation of Indexing from Recall:** The persistent store maintains a structured knowledge base across runs (`codebase_index`, `conventions`, `decisions`, `pitfalls`). Agent prompt construction never dumps raw code or the entire memory store; instead, a deterministic recall method (`recallForContext`) extracts only the most relevant, distilled context slice for the specific agent role and query.
+- **Pairing Distilled Summaries with Exact Inspection:** Recalled context informs agents what models, controllers, migrations, and patterns exist while explicitly instructing them to use `FileReaderTool` to inspect exact lines and file contents as needed.
+- **Incremental Growth Across Runs:** When a run completes successfully, new artifacts are categorized into `codebase_index`, architectural choices are captured as `decisions`, and root causes resolved by `FixerAgent` are logged as `pitfalls`.
+- **Deduplication & Secret Sanitization:** Entries are deduplicated across runs to prevent memory bloat, and all text is sanitized to ensure API keys, bearer tokens, or secrets are never committed to disk.
+- **Strict Context Budget:** Recalled memory enforces configurable character limits (`max_context_chars`) and item caps (`max_items`) to keep agent prompts lean, predictable, and cost-effective.
+
+#### 2. Memory Store Schema (`.lara-orcest/memory.json`)
+- `codebase_index`: Lightweight mapping of models (`app/Models/`), controllers (`app/Http/Controllers/`), migrations (`database/migrations/`), routes (`routes/`), and key directories.
+- `conventions`: Project-specific and idiomatic Laravel conventions (e.g. strict types, thin controllers, FormRequest validation, feature tests).
+- `decisions`: Architectural milestone records including run ID, prompt title, plan summary, deliverables, and timestamp.
+- `pitfalls`: Failure modes diagnosed and resolved during execution, containing error summary, root cause, fix description, and affected files.
+- `metadata`: Versioning, consolidation counts, and update timestamps.
+
+#### 3. Agent & Graph Integration
+- **AbstractAgent Context Injection:** Before dispatching an LLM turn, `AbstractAgent` calls `recallForContext($this->getName(), $state->prompt)` and prepends the distilled block to the user prompt.
+- **FixerAgent Resolution Recording:** When `FixerAgent` applies patches, the diagnosed root cause and affected files are recorded in run state metadata.
+- **GraphEngine Finalization:** When execution reaches terminal completion, `GraphEngine::finalizeRun` calls `ProjectMemoryStore::consolidate($state)` unless running in `dry_run` mode or memory is disabled.
+- **Opt-Out Controls:** Memory can be globally disabled via `lara-orcest.memory.enabled = false` or per-run using `--no-memory`. Persistent memory files are never mutated during `--dry-run`.
+
 ## 9. Security & Operational Guardrails
 
 ### Path allow-lists and denylists
@@ -738,7 +860,21 @@ return [
             'qa_agent' => env('LARA_ORCEST_MODEL_QA_AGENT'),
             'fixer_agent' => env('LARA_ORCEST_MODEL_FIXER_AGENT'),
             'reviewer_agent' => env('LARA_ORCEST_MODEL_REVIEWER_AGENT'),
+            'web_scraping_agent' => env('LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT'),
         ],
+    ],
+
+    'web_scraping' => [
+        'timeout' => (int) env('LARA_ORCEST_SCRAPING_TIMEOUT', 30),
+        'retries' => (int) env('LARA_ORCEST_SCRAPING_RETRIES', 2),
+        'retry_sleep' => (int) env('LARA_ORCEST_SCRAPING_RETRY_SLEEP', 100),
+        'max_response_size' => (int) env('LARA_ORCEST_SCRAPING_MAX_SIZE', 2_000_000),
+        'max_content_chars' => (int) env('LARA_ORCEST_SCRAPING_MAX_CHARS', 25_000),
+        'allowed_schemes' => ['http', 'https'],
+        'allow_private_ips' => (bool) env('LARA_ORCEST_SCRAPING_ALLOW_PRIVATE_IPS', false),
+        'default_endpoint' => env('LARA_ORCEST_SCRAPING_DEFAULT_ENDPOINT'),
+        'default_method' => env('LARA_ORCEST_SCRAPING_DEFAULT_METHOD', 'POST'),
+        'user_agent' => env('LARA_ORCEST_SCRAPING_USER_AGENT', 'LaraOrcest-WebScraper/1.0 (+https://github.com/yousefhatem/LaraOrcest)'),
     ],
 
     'execution' => [
@@ -746,6 +882,30 @@ return [
         'max_fix_attempts' => 3,
         'dry_run' => false,
         'process_timeout' => 120,
+    ],
+
+    'graph' => [
+        'parallel' => [
+            'enabled' => env('LARA_ORCEST_PARALLEL_ENABLED', true),
+            'max_concurrency' => (int) env('LARA_ORCEST_MAX_CONCURRENCY', 4),
+        ],
+    ],
+
+    'human_in_the_loop' => [
+        'enabled' => env('LARA_ORCEST_HITL_ENABLED', false),
+        'skip_review' => env('LARA_ORCEST_SKIP_HUMAN_REVIEW', false),
+        'gates' => [
+            'after_plan' => env('LARA_ORCEST_GATE_AFTER_PLAN', true),
+            'before_commit' => env('LARA_ORCEST_GATE_BEFORE_COMMIT', true),
+        ],
+    ],
+
+    'memory' => [
+        'enabled' => env('LARA_ORCEST_MEMORY_ENABLED', true),
+        'path' => env('LARA_ORCEST_MEMORY_PATH', '.lara-orcest/memory.json'),
+        'max_context_chars' => (int) env('LARA_ORCEST_MEMORY_MAX_CHARS', 2500),
+        'max_items' => (int) env('LARA_ORCEST_MEMORY_MAX_ITEMS', 15),
+        'auto_index' => (bool) env('LARA_ORCEST_MEMORY_AUTO_INDEX', true),
     ],
 
     'git' => [

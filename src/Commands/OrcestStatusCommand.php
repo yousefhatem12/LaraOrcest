@@ -31,6 +31,12 @@ class OrcestStatusCommand extends Command
             $this->components->twoColumnDetail('Current Node', (string) ($data['current_node'] ?? 'unknown'));
             $this->components->twoColumnDetail('Prompt', (string) ($data['prompt'] ?? ''));
 
+            if (! empty($data['paused_gate'])) {
+                $this->components->twoColumnDetail('Paused At Gate', (string) $data['paused_gate']);
+                $this->line("Run is paused at review gate: {$data['paused_gate']}");
+                $this->line("Resume command: php artisan orcest:approve {$runId}");
+            }
+
             $guardrails = $data['guardrails'] ?? [];
             $this->components->twoColumnDetail('Steps Taken', (string) ($guardrails['step_count'] ?? 0) . ' / ' . ($guardrails['max_steps'] ?? 40));
             $this->components->twoColumnDetail('Fix Attempts', (string) ($guardrails['fix_attempts'] ?? 0) . ' / ' . ($guardrails['max_fix_attempts'] ?? 3));

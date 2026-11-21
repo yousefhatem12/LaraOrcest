@@ -61,9 +61,17 @@ abstract class AbstractAgent implements AgentContract
         // Filter tools to only those allowed for this agent
         $authorizedTools = $this->authorizeTools($tools);
 
+        $userPrompt = $this->buildUserPrompt($state);
+
+        // Inject compact project memory if enabled
+        $memoryContext = $this->resolveProjectMemoryContext($state);
+        if ($memoryContext !== null && $memoryContext !== '') {
+            $userPrompt = $memoryContext . "\n\n" . $userPrompt;
+        }
+
         $messages = [
             ['role' => 'system', 'content' => $this->buildSystemPrompt()],
-            ['role' => 'user', 'content' => $this->buildUserPrompt($state)],
+            ['role' => 'user', 'content' => $userPrompt],
         ];
 
         // Observability context and per-agent model routing
@@ -148,5 +156,33 @@ abstract class AbstractAgent implements AgentContract
         }
 
         return $tools[$name];
+    }
+
+    /**
+     * Resolves compact project memory context for this agent turn if enabled.
+     */
+    protected function resolveProjectMemoryContext(RunState $state): ?string
+    {
+        if (! $state->isMemoryEnabled()) {
+            return null;
+        }
+
+        try {
+            $container = \Illuminate\Container\Container::getInstance();
+            /** @var \Yousef\LaraOrcest\Contracts\ProjectMemoryContract $store */
+            $store = ($container !== null && $container->bound(\Yousef\LaraOrcest\Contracts\ProjectMemoryContract::class))
+                ? $container->make(\Yousef\LaraOrcest\Contracts\ProjectMemoryContract::class)
+                : new \Yousef\LaraOrcest\Memory\ProjectMemoryStore();
+
+            if (! $store->isEnabled()) {
+                return null;
+            }
+
+            $context = $store->recallForContext($this->getName(), $state->prompt);
+
+            return $context !== '' ? $context : null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

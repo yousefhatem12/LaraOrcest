@@ -71,6 +71,7 @@ return [
             'qa_agent' => env('LARA_ORCEST_MODEL_QA_AGENT'),
             'fixer_agent' => env('LARA_ORCEST_MODEL_FIXER_AGENT'),
             'reviewer_agent' => env('LARA_ORCEST_MODEL_REVIEWER_AGENT'),
+            'web_scraping_agent' => env('LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT'),
         ],
 
         'providers' => [
@@ -116,6 +117,82 @@ return [
         'max_fix_attempts' => (int) env('LARA_ORCEST_MAX_FIX_ATTEMPTS', 3),
         'dry_run' => (bool) env('LARA_ORCEST_DRY_RUN', false),
         'process_timeout' => (int) env('LARA_ORCEST_PROCESS_TIMEOUT', 120),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Parallel & Sub-Graph Execution
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for parallel wave scheduling, task scope conflict resolution,
+    | and concurrent sub-graph branch execution.
+    |
+    */
+    'graph' => [
+        'parallel' => [
+            'enabled' => (bool) env('LARA_ORCEST_PARALLEL_ENABLED', true),
+            'max_concurrency' => (int) env('LARA_ORCEST_MAX_CONCURRENCY', 4),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Human-in-the-Loop (HITL) Review & Approval Gates
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for interactive human review gates where execution pauses
+    | for explicit user approval (e.g. after planning, before final git commit).
+    | Users can opt out per-run with --no-human-review or skip_review.
+    |
+    */
+    'human_in_the_loop' => [
+        'enabled' => (bool) env('LARA_ORCEST_HITL_ENABLED', false),
+        'skip_review' => (bool) env('LARA_ORCEST_SKIP_HUMAN_REVIEW', false),
+        'gates' => [
+            'after_plan' => (bool) env('LARA_ORCEST_GATE_AFTER_PLAN', true),
+            'before_commit' => (bool) env('LARA_ORCEST_GATE_BEFORE_COMMIT', true),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Project Memory & Codebase Index (Memorilla Architecture)
+    |--------------------------------------------------------------------------
+    |
+    | Persistent, compact codebase knowledge store inspired by Memorilla.
+    | Separates store indexing from task/agent recall, limits prompt bloat
+    | with a compact context budget, and pairs distilled summaries with
+    | exact file inspection via FileReaderTool.
+    |
+    */
+    'memory' => [
+        'enabled' => (bool) env('LARA_ORCEST_MEMORY_ENABLED', true),
+        'path' => env('LARA_ORCEST_MEMORY_PATH', '.lara-orcest/memory.json'),
+        'max_context_chars' => (int) env('LARA_ORCEST_MEMORY_MAX_CHARS', 2500),
+        'max_items' => (int) env('LARA_ORCEST_MEMORY_MAX_ITEMS', 15),
+        'auto_index' => (bool) env('LARA_ORCEST_MEMORY_AUTO_INDEX', true),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Web Scraping & Ingestion Agent Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for WebScrapingAgent fetching target website URLs, extracting
+    | structured data guided by BA/PM requirements, and dispatching to endpoints.
+    |
+    */
+    'web_scraping' => [
+        'timeout' => (int) env('LARA_ORCEST_SCRAPE_TIMEOUT', 30),
+        'retries' => (int) env('LARA_ORCEST_SCRAPE_RETRIES', 2),
+        'retry_sleep' => (int) env('LARA_ORCEST_SCRAPE_RETRY_SLEEP', 100), // ms
+        'max_response_size' => (int) env('LARA_ORCEST_SCRAPE_MAX_SIZE', 500_000), // 500KB
+        'max_content_chars' => (int) env('LARA_ORCEST_SCRAPE_MAX_CHARS', 10_000), // max chars per site in LLM prompt
+        'allowed_schemes' => ['http', 'https'],
+        'allow_private_ips' => (bool) env('LARA_ORCEST_SCRAPE_ALLOW_PRIVATE_IPS', false),
+        'default_endpoint' => env('LARA_ORCEST_SCRAPE_DEFAULT_ENDPOINT', null),
+        'default_method' => env('LARA_ORCEST_SCRAPE_DEFAULT_METHOD', 'POST'),
+        'user_agent' => env('LARA_ORCEST_SCRAPE_USER_AGENT', 'Mozilla/5.0 (compatible; LaraOrcestScraper/1.0; +https://github.com/yousefhatem/LaraOrcest)'),
     ],
 
     /*
