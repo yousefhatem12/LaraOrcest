@@ -20,22 +20,34 @@ hero:
       link: https://github.com/yousefhatem12/LaraOrcest
 
 features:
-  - icon: 🤖
+  - icon:
+      src: /icons/pod-roles.svg
+      alt: Pod Roles
     title: CrewAI-Style Pod Roles
     details: 9 specialized agents (BA, Architect, Database, Backend, QA, Reviewer, etc.) with strict JSON schemas, least-privilege tools, and per-agent model routing.
-  - icon: 🔄
+  - icon:
+      src: /icons/directed-graph.svg
+      alt: Directed Graphs
     title: LangGraph-Style Directed Graphs
     details: Deterministic execution with immutable RunState, checkpointing, conditional EdgeRules, parallel scheduling waves, and bounded cyclic bug fixing.
-  - icon: ⚡
+  - icon:
+      src: /icons/zero-python-proxy.svg
+      alt: Zero Python Proxy
     title: Zero Python & LiteLLM Native
     details: Runs natively in PHP 8.2+ via Composer. Direct HTTP driver connects to LiteLLM, Ollama, vLLM, OpenRouter, Anthropic, or OpenAI.
-  - icon: 🛡️
+  - icon:
+      src: /icons/sandboxing.svg
+      alt: Sandboxing & HITL
     title: Sandboxed Tools & Guardrails
     details: PathGuard filesystem boundaries, Artisan command whitelisting, Git feature branch isolation, and Human-in-the-Loop approval gates.
-  - icon: 🧠
+  - icon:
+      src: /icons/project-memory.svg
+      alt: Project Memory
     title: Memorilla Project Memory
     details: Compact codebase knowledge store (.lara-orcest/memory.json) indexing conventions, past architectural decisions, and bug-fix resolutions.
-  - icon: 📖
+  - icon:
+      src: /icons/tests-openapi.svg
+      alt: Tests & OpenAPI
     title: Automated Tests & OpenAPI Specs
     details: Generates comprehensive Pest/PHPUnit test suites and complete OpenAPI 3.0+ / Swagger documentation files automatically.
 ---
@@ -95,7 +107,7 @@ LaraOrcest transforms natural language requirements into fully tested, documente
     description="Dedicated agents for BA, PM, Architect, Database, Backend, QA, and Reviewer with strict JSON schemas and least-privilege tools."
     badge="Core Roster"
     badgeVariant="brand"
-    icon="🤖"
+    icon="pod-roles"
     link="/agents"
   />
   <SpotlightCard
@@ -103,7 +115,7 @@ LaraOrcest transforms natural language requirements into fully tested, documente
     description="Stateful RunState container, checkpointer persistence (JSON/DB), conditional EdgeRules, and bounded cyclic bug repairs."
     badge="Engine"
     badgeVariant="indigo"
-    icon="🔄"
+    icon="directed-graph"
     link="/architecture"
   />
   <SpotlightCard
@@ -111,7 +123,7 @@ LaraOrcest transforms natural language requirements into fully tested, documente
     description="100% native PHP 8.2+ via Composer. Direct HTTP driver connects to LiteLLM Proxy, vLLM, Ollama, OpenRouter, Anthropic, or OpenAI."
     badge="Proxy Native"
     badgeVariant="cyan"
-    icon="⚡"
+    icon="zero-python-proxy"
     link="/quickstart"
   />
   <SpotlightCard
@@ -119,7 +131,7 @@ LaraOrcest transforms natural language requirements into fully tested, documente
     description="Orchestrate complete Domain-Driven Design bounded contexts (Tenancy, Catalog, Orders) with strict global TenantScope isolation."
     badge="Use Case 5"
     badgeVariant="brand"
-    icon="🏢"
+    icon="multi-tenant-ddd"
     link="/use-cases#use-case-5-multi-vendor-multi-tenant-platform-using-domain-driven-design-ddd"
   />
   <SpotlightCard
@@ -127,7 +139,7 @@ LaraOrcest transforms natural language requirements into fully tested, documente
     description="Extract, normalize, and reconcile structured data from two target URLs guided by BA/PM criteria and dispatch to target endpoints."
     badge="Use Case 2"
     badgeVariant="cyan"
-    icon="🌐"
+    icon="web-scraper"
     link="/use-cases#use-case-2-two-site-web-scraping-ingestion-pipeline"
   />
   <SpotlightCard
@@ -135,8 +147,24 @@ LaraOrcest transforms natural language requirements into fully tested, documente
     description="PathGuard filesystem boundaries, Artisan whitelists, Git branch isolation, and Human-in-the-Loop review gates."
     badge="Security"
     badgeVariant="emerald"
-    icon="🛡️"
+    icon="sandboxing"
     link="/safety-and-hitl"
+  />
+  <SpotlightCard
+    title="Memorilla Project Memory Store"
+    description="Compact .lara-orcest/memory.json store indexing architectural decisions, codebase models, and bug-fix root cause lessons."
+    badge="Memory"
+    badgeVariant="indigo"
+    icon="project-memory"
+    link="/architecture#7-project-memory-memorilla-architecture"
+  />
+  <SpotlightCard
+    title="Automated Tests & OpenAPI Specs"
+    description="Automated Pest/PHPUnit assertion coverage with SwaggerAgent authoring OpenAPI 3.0+ specs in JSON and YAML."
+    badge="Docs & QA"
+    badgeVariant="cyan"
+    icon="tests-openapi"
+    link="/agents#11-swagger-agent-swagger-openapi-documentation-specialist"
   />
 </div>
 

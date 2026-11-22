@@ -7,6 +7,7 @@ import ShinyBadge from './components/ShinyBadge.vue'
 import BlurRevealText from './components/BlurRevealText.vue'
 import SpotlightCard from './components/SpotlightCard.vue'
 import AgentFlowVisualizer from './components/AgentFlowVisualizer.vue'
+import AnimatedIcon from './components/AnimatedIcon.vue'
 
 export default {
   extends: DefaultTheme,
@@ -17,5 +18,6 @@ export default {
     app.component('BlurRevealText', BlurRevealText)
     app.component('SpotlightCard', SpotlightCard)
     app.component('AgentFlowVisualizer', AgentFlowVisualizer)
+    app.component('AnimatedIcon', AnimatedIcon)
   }
 } satisfies Theme
