@@ -1370,6 +1370,64 @@ class RunState
     }
 
     /**
+     * Returns concise summary of the generated Swagger/OpenAPI documentation.
+     */
+    public function getSwaggerSummary(): ?string
+    {
+        return $this->metadata['swagger_documentation']['summary'] ?? null;
+    }
+
+    /**
+     * Returns list of documented endpoint signatures (e.g. ['GET /api/tasks', 'POST /api/tasks']).
+     *
+     * @return array<int, string>
+     */
+    public function getSwaggerEndpoints(): array
+    {
+        $docs = (array) ($this->metadata['swagger_documentation'] ?? []);
+        if (! empty($docs['endpoints_documented'])) {
+            return (array) $docs['endpoints_documented'];
+        }
+
+        $endpoints = [];
+        $specPaths = (array) ($docs['openapi_spec']['paths'] ?? []);
+        foreach ($specPaths as $path => $ops) {
+            if (is_array($ops)) {
+                foreach (array_keys($ops) as $verb) {
+                    if (in_array(strtolower((string) $verb), ['get', 'post', 'put', 'patch', 'delete', 'options', 'head'], true)) {
+                        $endpoints[] = strtoupper((string) $verb) . ' ' . $path;
+                    }
+                }
+            }
+        }
+
+        return $endpoints;
+    }
+
+    /**
+     * Returns list of output file artifact paths for Swagger documentation.
+     *
+     * @return array<int, string>
+     */
+    public function getSwaggerOutputPaths(): array
+    {
+        $docs = (array) ($this->metadata['swagger_documentation'] ?? []);
+        if (! empty($docs['output_paths'])) {
+            return (array) $docs['output_paths'];
+        }
+
+        $files = (array) ($docs['files'] ?? []);
+        $paths = [];
+        foreach ($files as $f) {
+            if (! empty($f['path'])) {
+                $paths[] = (string) $f['path'];
+            }
+        }
+
+        return $paths;
+    }
+
+    /**
      * Checks if Swagger documentation has been produced.
      */
     public function hasSwaggerDocs(): bool
@@ -1409,6 +1467,66 @@ class RunState
     }
 
     /**
+     * Determines whether API endpoints exist or were planned/implemented in the current run.
+     */
+    public function hasApiEndpoints(): bool
+    {
+        // 1. Check implemented artifacts
+        foreach ($this->artifacts as $artifact) {
+            $path = (string) ($artifact['path'] ?? '');
+            if (
+                str_starts_with($path, 'routes/api')
+                || str_contains($path, 'Controllers/Api/')
+                || str_contains($path, 'Requests/')
+                || str_contains($path, 'Resources/')
+            ) {
+                return true;
+            }
+        }
+
+        // 2. Check technical plan
+        $routes = (array) ($this->technicalPlan['routes'] ?? []);
+        foreach ($routes as $route) {
+            $r = (string) $route;
+            if (str_contains($r, 'routes/api') || str_contains($r, '/api/')) {
+                return true;
+            }
+        }
+
+        $controllers = (array) ($this->technicalPlan['controllers'] ?? []);
+        foreach ($controllers as $controller) {
+            $c = (string) $controller;
+            if (str_contains($c, 'Controllers/Api/') || str_contains($c, 'Api\\') || str_ends_with($c, 'ApiController.php')) {
+                return true;
+            }
+        }
+
+        // 3. Check backlog tasks for API endpoint signatures
+        foreach ($this->backlog as $task) {
+            $title = (string) ($task['title'] ?? '');
+            $desc = (string) ($task['description'] ?? '');
+            if (preg_match('#\b(GET|POST|PUT|PATCH|DELETE)\s+/api/#i', $title . ' ' . $desc)) {
+                return true;
+            }
+
+            $criteria = (array) ($task['acceptance_criteria'] ?? []);
+            foreach ($criteria as $criterion) {
+                if (preg_match('#\b(GET|POST|PUT|PATCH|DELETE)\s+/api/#i', (string) $criterion)) {
+                    return true;
+                }
+            }
+        }
+
+        // 4. Check prompt or requirements for REST/API terms
+        $text = strtolower($this->prompt);
+        if (str_contains($text, 'api') || str_contains($text, 'endpoint') || str_contains($text, 'rest')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * Determines whether SwaggerAgent should run in the orchestration graph.
      */
     public function shouldRunSwagger(): bool
@@ -1426,7 +1544,17 @@ class RunState
             return true;
         }
 
-        return $this->detectSwaggerIntent();
+        if ($this->detectSwaggerIntent()) {
+            return true;
+        }
+
+        // Conditional activation: if enabled in configuration and API endpoints exist
+        $conditional = (bool) Config::get('lara-orcest.swagger.conditional_activation', Config::get('lara-orcest.swagger.conditional', false));
+        if ($conditional && $this->hasApiEndpoints()) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

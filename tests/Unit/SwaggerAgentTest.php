@@ -10,6 +10,7 @@ use Yousef\LaraOrcest\Agents\SwaggerAgent;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\LLM\Drivers\FakeDriver;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
 use Yousef\LaraOrcest\Tools\FileReaderTool;
 use Yousef\LaraOrcest\Tools\PatchWriterTool;
 use Yousef\LaraOrcest\Tools\Support\PathGuard;
@@ -26,7 +27,9 @@ class SwaggerAgentTest extends TestCase
     {
         $this->tempDir = sys_get_temp_dir() . '/lara_orcest_swagger_test_' . bin2hex(random_bytes(4));
         mkdir($this->tempDir . '/docs', 0755, true);
-        mkdir($this->tempDir . '/app/Http/Controllers', 0755, true);
+        mkdir($this->tempDir . '/storage/api-docs', 0755, true);
+        mkdir($this->tempDir . '/app/Http/Controllers/Api', 0755, true);
+        mkdir($this->tempDir . '/app/Http/Requests', 0755, true);
         mkdir($this->tempDir . '/routes', 0755, true);
 
         $this->pathGuard = new PathGuard($this->tempDir);
@@ -41,6 +44,8 @@ class SwaggerAgentTest extends TestCase
 
     protected function tearDown(): void
     {
+        Config::clearOverrides();
+
         if (is_dir($this->tempDir)) {
             $files = new \RecursiveIteratorIterator(
                 new \RecursiveDirectoryIterator($this->tempDir, \RecursiveDirectoryIterator::SKIP_DOTS),
@@ -86,10 +91,71 @@ class SwaggerAgentTest extends TestCase
         $this->assertSame('3.0.3', $content['openapi']);
         $this->assertArrayHasKey('/api/tasks', $content['paths']);
 
+        // Check tags, parameters, request body, and error responses exist in spec
+        $postOp = $content['paths']['/api/tasks']['post'];
+        $this->assertContains('Tasks', $postOp['tags']);
+        $this->assertArrayHasKey('requestBody', $postOp);
+        $this->assertArrayHasKey('201', $postOp['responses']);
+        $this->assertArrayHasKey('400', $postOp['responses']);
+        $this->assertArrayHasKey('401', $postOp['responses']);
+        $this->assertArrayHasKey('404', $postOp['responses']);
+        $this->assertArrayHasKey('422', $postOp['responses']);
+
         // Check artifacts recorded
         $this->assertNotEmpty($updated->artifacts);
         $artifactPaths = array_column($updated->artifacts, 'path');
         $this->assertContains('docs/swagger.json', $artifactPaths);
+
+        // Check RunState summary, endpoints, and output paths
+        $this->assertNotEmpty($updated->getSwaggerEndpoints());
+        $this->assertContains('GET /api/tasks', $updated->getSwaggerEndpoints());
+        $this->assertContains('POST /api/tasks', $updated->getSwaggerEndpoints());
+        $this->assertContains('docs/swagger.json', $updated->getSwaggerOutputPaths());
+        $this->assertNotNull($updated->getSwaggerSummary());
+    }
+
+    public function test_swagger_agent_inspects_workspace_files_using_file_reader(): void
+    {
+        // Seed workspace with route, controller, and form request files
+        file_put_contents(
+            $this->tempDir . '/routes/api.php',
+            "<?php\n\nuse Illuminate\Support\Facades\Route;\n\nRoute::apiResource('tasks', TaskController::class);\n"
+        );
+        file_put_contents(
+            $this->tempDir . '/app/Http/Controllers/Api/TaskController.php',
+            "<?php\n\nnamespace App\Http\Controllers\Api;\n\nclass TaskController {}\n"
+        );
+        file_put_contents(
+            $this->tempDir . '/app/Http/Requests/StoreTaskRequest.php',
+            "<?php\n\nnamespace App\Http\Requests;\n\nclass StoreTaskRequest { public function rules(): array { return ['title' => 'required|string']; } }\n"
+        );
+
+        $state = RunState::initial('run_swagger_inspect', 'Generate documentation', [
+            'swagger' => true,
+        ]);
+        $state = $state->withTechnicalPlan([
+            'routes' => ['routes/api.php'],
+            'controllers' => ['app/Http/Controllers/Api/TaskController.php'],
+            'requests' => ['app/Http/Requests/StoreTaskRequest.php'],
+        ]);
+
+        $this->agent->execute($state, $this->tools, $this->fakeDriver);
+
+        $calls = $this->fakeDriver->getRecordedCalls();
+        $this->assertNotEmpty($calls);
+
+        $userPrompt = '';
+        foreach ($calls[0]['messages'] as $msg) {
+            if (($msg['role'] ?? '') === 'user') {
+                $userPrompt = (string) $msg['content'];
+            }
+        }
+
+        // Verify that FileReaderTool read and injected the files into the prompt
+        $this->assertStringContainsString('INSPECTED CODEBASE & API ARTIFACT FILES (via FileReaderTool)', $userPrompt);
+        $this->assertStringContainsString('Route::apiResource', $userPrompt);
+        $this->assertStringContainsString('StoreTaskRequest', $userPrompt);
+        $this->assertStringContainsString('TaskController', $userPrompt);
     }
 
     public function test_swagger_agent_fallback_generates_file_when_files_omitted(): void
@@ -123,6 +189,41 @@ class SwaggerAgentTest extends TestCase
 
         $content = json_decode((string) file_get_contents($targetFile), true);
         $this->assertSame('Fallback API', $content['info']['title']);
+        $this->assertContains('GET /api/products', $updated->getSwaggerEndpoints());
+    }
+
+    public function test_swagger_agent_generates_yaml_when_yaml_path_configured(): void
+    {
+        $state = RunState::initial('run_swagger_yaml', 'Generate YAML OpenAPI documentation', [
+            'swagger_path' => 'docs/swagger.yaml',
+            'swagger_format' => 'yaml',
+        ]);
+
+        $updated = $this->agent->execute($state, $this->tools, $this->fakeDriver);
+
+        $this->assertTrue($updated->hasSwaggerDocs());
+        $targetFile = $this->tempDir . '/docs/swagger.yaml';
+        $this->assertFileExists($targetFile);
+
+        $content = (string) file_get_contents($targetFile);
+        $this->assertStringContainsString('openapi:', $content);
+        $this->assertStringContainsString('/api/tasks:', $content);
+        $this->assertContains('docs/swagger.yaml', $updated->getSwaggerOutputPaths());
+    }
+
+    public function test_swagger_agent_supports_storage_api_docs_custom_path(): void
+    {
+        $customPath = 'storage/api-docs/api-docs.json';
+        $state = RunState::initial('run_swagger_custom_path', 'Generate API docs in storage', [
+            'swagger_path' => $customPath,
+        ]);
+
+        $updated = $this->agent->execute($state, $this->tools, $this->fakeDriver);
+
+        $this->assertTrue($updated->hasSwaggerDocs());
+        $targetFile = $this->tempDir . '/' . $customPath;
+        $this->assertFileExists($targetFile);
+        $this->assertContains($customPath, $updated->getSwaggerOutputPaths());
     }
 
     public function test_swagger_agent_respects_dry_run(): void
@@ -140,6 +241,38 @@ class SwaggerAgentTest extends TestCase
 
         // But artifact is recorded in state
         $this->assertNotEmpty($updated->artifacts);
+    }
+
+    public function test_has_api_endpoints_and_conditional_activation(): void
+    {
+        // 1. Standard non-API run: command/job
+        $nonApiState = RunState::initial('run_non_api', 'Create a queue worker to process invoices');
+        $this->assertFalse($nonApiState->hasApiEndpoints());
+        $this->assertFalse($nonApiState->shouldRunSwagger());
+
+        // 2. API run: prompt mentions API
+        $apiStatePrompt = RunState::initial('run_api_prompt', 'Implement tasks REST API');
+        $this->assertTrue($apiStatePrompt->hasApiEndpoints());
+
+        // 3. API run: technical plan has api routes/controllers
+        $apiStatePlan = RunState::initial('run_api_plan', 'Create feature');
+        $apiStatePlan = $apiStatePlan->withTechnicalPlan([
+            'routes' => ['routes/api.php'],
+            'controllers' => ['app/Http/Controllers/Api/ItemController.php'],
+        ]);
+        $this->assertTrue($apiStatePlan->hasApiEndpoints());
+
+        // 4. API run: artifacts include api controller
+        $apiStateArtifacts = RunState::initial('run_api_art', 'Create feature');
+        $apiStateArtifacts = $apiStateArtifacts->recordArtifact('app/Http/Controllers/Api/ItemController.php', 'created', 'API controller');
+        $this->assertTrue($apiStateArtifacts->hasApiEndpoints());
+
+        // 5. When conditional activation is enabled via config
+        Config::set('lara-orcest.swagger.conditional_activation', true);
+        $this->assertTrue($apiStatePlan->shouldRunSwagger());
+
+        // Reset config
+        Config::set('lara-orcest.swagger.conditional_activation', false);
     }
 
     public function test_swagger_intent_detection(): void

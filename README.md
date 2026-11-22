@@ -116,10 +116,12 @@ Automated Milestone Commit
 
 ### 1. Swagger & OpenAPI Documentation Agent (`SwaggerAgent`)
 Automates complete API documentation for generated and existing Laravel endpoints:
-- **Comprehensive OpenAPI 3.0+ Generation:** Inspects the technical plan, backend controllers, form requests, models, and routes to generate OpenAPI 3.0+ documentation in JSON or YAML.
-- **Accurate Schemas & Status Codes:** Generates path/query parameters, request body schemas, validation constraints, and standard HTTP response codes (`200`, `201`, `400`, `401`, `403`, `404`, `422`, `500`).
-- **Flexible Target Locations:** Outputs specs directly to `docs/swagger.json`, `docs/swagger.yaml`, `storage/api-docs/api-docs.json` (L5-Swagger compliant), or custom paths via `config('lara-orcest.swagger.output_path')`.
-- **Intent-Driven & CLI Controls:** Activates automatically when Swagger/OpenAPI keywords are in the prompt (e.g. *"make swagger documentation for backend"*), via `--swagger` in Artisan, or globally via `config('lara-orcest.swagger.auto_generate')`. Bypassed per-run with `--no-swagger`.
+- **Comprehensive OpenAPI 3.0+ Generation:** Inspects implemented routes (`routes/api.php`), API controllers, Form Requests, resources, models, and technical plans using `FileReaderTool` to generate or incrementally update OpenAPI 3.0+ specifications in JSON or YAML.
+- **Form Request & Validation Rule Inference:** Automatically analyzes Form Requests and validation rules to generate detailed request body schemas, required properties, and path/query parameters with data types and descriptions.
+- **Accurate Schemas, Tags & Realistic Error Responses:** Groups operations with tags, documents 200/201 success responses, and includes realistic JSON examples for standard HTTP error codes (`400`, `401`, `403`, `404`, `422`, `500`).
+- **Flexible Target Locations:** Outputs specs directly to `docs/swagger.json`, `docs/swagger.yaml`, `storage/api-docs/api-docs.json` (L5-Swagger compliant), `openapi.json`, or custom paths via `config('lara-orcest.swagger.output_path')` or `--swagger-path`.
+- **Intent-Driven & Conditional Execution:** Activates automatically when Swagger/OpenAPI intent is detected in the prompt (e.g. *"make swagger documentation for backend"*), via `--swagger` in Artisan, conditionally when API endpoints exist with `conditional_activation` enabled, or globally via `config('lara-orcest.swagger.auto_generate')`. Bypassed safely in non-API runs or with `--no-swagger`.
+- **Per-Agent Model Support:** Can be routed to specialized reasoning or coding models via `config('lara-orcest.llm.agent_models.swagger_agent')`.
 - **Dedicated Pipeline:** Use `DefaultGraphBuilder::buildSwaggerPipeline()` for lightweight standalone API documentation generation (`backend_agent -> swagger_agent -> completed`).
 
 ### 2. Intelligent Web Scraping & Ingestion (`WebScrapingAgent`)
@@ -590,6 +592,7 @@ return [
     // Swagger / OpenAPI documentation
     'swagger' => [
         'enabled' => (bool) env('LARA_ORCEST_SWAGGER_ENABLED', true),
+        'conditional_activation' => (bool) env('LARA_ORCEST_SWAGGER_CONDITIONAL', false),
         'auto_generate' => (bool) env('LARA_ORCEST_SWAGGER_AUTO_GENERATE', false),
         'title' => env('LARA_ORCEST_SWAGGER_TITLE', 'Laravel Application API Documentation'),
         'version' => env('LARA_ORCEST_SWAGGER_VERSION', '1.0.0'),

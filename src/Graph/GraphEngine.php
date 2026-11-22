@@ -48,16 +48,18 @@ class GraphEngine
     }
 
     /**
-     * Factory method creating a default 9-agent GraphEngine.
+     * Factory method creating a default GraphEngine.
      *
      * @param  array<string, ToolContract>|null  $tools
      */
     public static function createDefault(
         LlmDriverContract $llm,
         ?CheckpointerContract $checkpointer = null,
-        ?array $tools = null
+        ?array $tools = null,
+        bool $withScraper = false,
+        bool $withSwagger = false
     ): self {
-        return DefaultGraphBuilder::build($llm, $checkpointer, $tools);
+        return DefaultGraphBuilder::build($llm, $checkpointer, $tools, $withScraper, $withSwagger);
     }
 
     public function addNode(GraphNodeContract $node): self

@@ -210,6 +210,7 @@ return [
     */
     'swagger' => [
         'enabled' => (bool) env('LARA_ORCEST_SWAGGER_ENABLED', true),
+        'conditional_activation' => (bool) env('LARA_ORCEST_SWAGGER_CONDITIONAL', false),
         'auto_generate' => (bool) env('LARA_ORCEST_SWAGGER_AUTO_GENERATE', false),
         'title' => env('LARA_ORCEST_SWAGGER_TITLE', 'Laravel Application API Documentation'),
         'version' => env('LARA_ORCEST_SWAGGER_VERSION', '1.0.0'),

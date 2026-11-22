@@ -23,6 +23,8 @@ class OrcestBuildCommand extends Command
                             {--no-scrape : Bypass web scraping agent even if URLs are present}
                             {--swagger : Generate Swagger / OpenAPI documentation for backend APIs}
                             {--no-swagger : Bypass Swagger / OpenAPI documentation generation}
+                            {--swagger-format= : Output format for OpenAPI documentation (json, yaml, both)}
+                            {--swagger-path= : Custom output file path for Swagger documentation}
                             {--dry-run : Preview changes and plans without writing to disk or Git}
                             {--max-fix-attempts= : Maximum bug-fix loop retries}
                             {--max-steps= : Maximum graph execution steps}
@@ -90,6 +92,14 @@ class OrcestBuildCommand extends Command
         if ($this->option('no-swagger')) {
             $options['no_swagger'] = true;
             $options['swagger'] = ['enabled' => false];
+        }
+
+        if ($this->option('swagger-format')) {
+            $options['swagger_format'] = (string) $this->option('swagger-format');
+        }
+
+        if ($this->option('swagger-path')) {
+            $options['swagger_path'] = (string) $this->option('swagger-path');
         }
 
         $options['on_step'] = function (RunState $state, string $node, string $message) {
@@ -196,6 +206,22 @@ class OrcestBuildCommand extends Command
                 ];
             }
             $this->table(['Path', 'Action', 'Summary'], $artifactRows);
+        }
+
+        // Display Swagger / OpenAPI Documentation
+        if ($state->hasSwaggerDocs()) {
+            $this->newLine();
+            $endpoints = $state->getSwaggerEndpoints();
+            $endpointCount = count($endpoints);
+            $this->components->twoColumnDetail('<options=bold>Swagger / OpenAPI</>', "{$endpointCount} endpoints documented");
+            $summary = $state->getSwaggerSummary();
+            if ($summary !== null && $summary !== '') {
+                $this->line("Summary: {$summary}");
+            }
+            $outputPaths = $state->getSwaggerOutputPaths();
+            if (! empty($outputPaths)) {
+                $this->line("Documentation file(s): " . implode(', ', $outputPaths));
+            }
         }
 
         // Display Test Outcomes
