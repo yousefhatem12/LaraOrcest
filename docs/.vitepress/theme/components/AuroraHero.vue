@@ -81,7 +81,7 @@ onUnmounted(() => {
   padding: 4.5rem 1.5rem 3.5rem;
   margin: -1.5rem -1.5rem 2.5rem;
   border-radius: 24px;
-  background: var(--vp-c-bg-alt);
+  background: var(--vp-c-bg-elv);
   border: 1px solid var(--lo-card-border);
   box-shadow: var(--lo-card-shadow);
   display: flex;
@@ -117,7 +117,8 @@ onUnmounted(() => {
   bottom: 0;
   background: radial-gradient(
     circle at var(--aurora-x) var(--aurora-y),
-    rgba(255, 45, 32, 0.12) 0%,
+    rgba(255, 45, 32, 0.06) 0%,
+    rgba(99, 102, 241, 0.04) 30%,
     transparent 60%
   );
   transition: background 0.15s ease-out;
@@ -135,8 +136,8 @@ onUnmounted(() => {
 .aurora-blob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.45;
+  filter: blur(85px);
+  opacity: 0.18;
   will-change: transform;
   animation: floatBlobs 16s ease-in-out infinite alternate;
 }
@@ -204,7 +205,7 @@ onUnmounted(() => {
 .hero-logo {
   position: relative;
   z-index: 2;
-  filter: drop-shadow(0 12px 24px rgba(255, 45, 32, 0.25));
+  filter: drop-shadow(0 8px 18px rgba(255, 45, 32, 0.18));
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -219,11 +220,15 @@ onUnmounted(() => {
   transform: translate(-50%, -50%);
   width: 140px;
   height: 140px;
-  background: radial-gradient(circle, rgba(255, 45, 32, 0.4) 0%, rgba(99, 102, 241, 0.2) 60%, transparent 80%);
+  background: radial-gradient(circle, rgba(255, 45, 32, 0.18) 0%, rgba(99, 102, 241, 0.08) 60%, transparent 80%);
   border-radius: 50%;
   filter: blur(25px);
   z-index: 1;
   pointer-events: none;
+}
+
+.dark .logo-glow {
+  background: radial-gradient(circle, rgba(255, 45, 32, 0.4) 0%, rgba(99, 102, 241, 0.2) 60%, transparent 80%);
 }
 
 .hero-title-slot {
@@ -263,19 +268,20 @@ onUnmounted(() => {
 .hero-actions-slot :deep(a.btn-brand) {
   background: var(--vp-c-brand-1);
   color: #FFFFFF !important;
-  box-shadow: 0 4px 14px rgba(255, 45, 32, 0.35);
+  box-shadow: 0 4px 14px rgba(255, 45, 32, 0.28);
 }
 
 .hero-actions-slot :deep(a.btn-brand:hover) {
   background: var(--vp-c-brand-2);
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(255, 45, 32, 0.45);
+  box-shadow: 0 8px 20px rgba(255, 45, 32, 0.38);
 }
 
 .hero-actions-slot :deep(a.btn-alt) {
   background: var(--vp-c-bg-elv);
   color: var(--vp-c-text-1) !important;
   border: 1px solid var(--lo-card-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .hero-actions-slot :deep(a.btn-alt:hover) {

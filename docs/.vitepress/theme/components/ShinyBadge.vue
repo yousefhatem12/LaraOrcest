@@ -62,9 +62,9 @@ const badgeClass = computed(() => `shiny-badge-${props.variant}`)
 
 /* Variant: Brand (Laravel Red) */
 .shiny-badge-brand {
-  background: rgba(255, 45, 32, 0.08);
-  border-color: rgba(255, 45, 32, 0.28);
-  color: #FF2D20;
+  background: rgba(255, 45, 32, 0.06);
+  border-color: rgba(255, 45, 32, 0.22);
+  color: #e02619;
 }
 .dark .shiny-badge-brand {
   background: rgba(255, 45, 32, 0.14);
@@ -75,9 +75,9 @@ const badgeClass = computed(() => `shiny-badge-${props.variant}`)
 
 /* Variant: Cyan */
 .shiny-badge-cyan {
-  background: rgba(6, 182, 212, 0.08);
-  border-color: rgba(6, 182, 212, 0.3);
-  color: #0891B2;
+  background: rgba(6, 182, 212, 0.06);
+  border-color: rgba(6, 182, 212, 0.22);
+  color: #0e7490;
 }
 .dark .shiny-badge-cyan {
   background: rgba(6, 182, 212, 0.14);
@@ -88,9 +88,9 @@ const badgeClass = computed(() => `shiny-badge-${props.variant}`)
 
 /* Variant: Indigo */
 .shiny-badge-indigo {
-  background: rgba(99, 102, 241, 0.08);
-  border-color: rgba(99, 102, 241, 0.3);
-  color: #4F46E5;
+  background: rgba(99, 102, 241, 0.06);
+  border-color: rgba(99, 102, 241, 0.22);
+  color: #4338ca;
 }
 .dark .shiny-badge-indigo {
   background: rgba(99, 102, 241, 0.14);
@@ -101,9 +101,9 @@ const badgeClass = computed(() => `shiny-badge-${props.variant}`)
 
 /* Variant: Emerald */
 .shiny-badge-emerald {
-  background: rgba(16, 185, 129, 0.08);
-  border-color: rgba(16, 185, 129, 0.3);
-  color: #059669;
+  background: rgba(16, 185, 129, 0.06);
+  border-color: rgba(16, 185, 129, 0.22);
+  color: #047857;
 }
 .dark .shiny-badge-emerald {
   background: rgba(16, 185, 129, 0.14);
@@ -121,7 +121,7 @@ const badgeClass = computed(() => `shiny-badge-${props.variant}`)
   background: linear-gradient(
     105deg,
     transparent 20%,
-    rgba(255, 255, 255, 0.5) 50%,
+    rgba(255, 255, 255, 0.45) 50%,
     transparent 80%
   );
   transform: translateX(-150%);

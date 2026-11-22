@@ -342,7 +342,7 @@ const iconSize = computed(() => {
 
 :deep(.spotlight-card:hover) .accent-stroke,
 .animated-icon:hover .accent-stroke {
-  filter: drop-shadow(0 0 4px rgba(255, 45, 32, 0.5));
+  filter: drop-shadow(0 0 3px rgba(255, 45, 32, 0.35));
 }
 
 .dark :deep(.spotlight-card:hover) .accent-stroke,

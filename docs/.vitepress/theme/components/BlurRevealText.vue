@@ -85,7 +85,14 @@ function isHighlighted(word: string): boolean {
 }
 
 .word-span.is-highlighted {
-  background: linear-gradient(135deg, #FF2D20 0%, #6366F1 50%, #06B6D4 100%);
+  background: linear-gradient(135deg, #FF2D20 0%, #4F46E5 50%, #0891B2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.dark .word-span.is-highlighted {
+  background: linear-gradient(135deg, #FF3B30 0%, #6366F1 50%, #06B6D4 100%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;

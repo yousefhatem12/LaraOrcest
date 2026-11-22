@@ -359,7 +359,7 @@ function selectNode(id: string) {
   border-radius: 14px;
   background: var(--vp-c-bg-elv);
   border: 1px solid var(--lo-card-border);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   color: inherit;
@@ -367,15 +367,24 @@ function selectNode(id: string) {
 
 .flow-node-card:hover {
   transform: translateY(-4px);
-  border-color: rgba(255, 45, 32, 0.4);
-  box-shadow: 0 10px 24px -6px rgba(255, 45, 32, 0.15);
+  border-color: rgba(255, 45, 32, 0.35);
+  box-shadow: 0 8px 18px -4px rgba(255, 45, 32, 0.12);
 }
 
 .flow-node-card.is-selected {
   border-color: var(--vp-c-brand-1);
-  background: var(--vp-c-bg);
-  box-shadow: 0 0 0 2px var(--vp-c-brand-1), 0 10px 25px -5px rgba(255, 45, 32, 0.25);
+  background: var(--vp-c-bg-elv);
+  box-shadow: 0 0 0 2px var(--vp-c-brand-1), 0 8px 18px -4px rgba(255, 45, 32, 0.16);
   transform: translateY(-4px);
+}
+
+.dark .flow-node-card:hover {
+  border-color: rgba(255, 45, 32, 0.4);
+  box-shadow: 0 10px 24px -6px rgba(255, 45, 32, 0.15);
+}
+
+.dark .flow-node-card.is-selected {
+  box-shadow: 0 0 0 2px var(--vp-c-brand-1), 0 10px 25px -5px rgba(255, 45, 32, 0.25);
 }
 
 .flow-node-card.is-cyclic-highlight {
@@ -404,6 +413,10 @@ function selectNode(id: string) {
   margin-top: 0.3rem;
   border-radius: 4px;
   background: var(--vp-c-brand-soft);
+  color: #e02619;
+}
+
+.dark .node-badge {
   color: var(--vp-c-brand-1);
 }
 
@@ -446,8 +459,12 @@ function selectNode(id: string) {
   border-radius: 50%;
   background: var(--vp-c-brand-1);
   transform: translateY(-50%);
-  box-shadow: 0 0 8px var(--vp-c-brand-1);
+  box-shadow: 0 0 5px rgba(255, 45, 32, 0.5);
   animation: pulseTravel 2.2s infinite linear;
+}
+
+.dark .pulse-packet {
+  box-shadow: 0 0 8px var(--vp-c-brand-1);
 }
 
 .connector-arrow {
@@ -507,8 +524,8 @@ function selectNode(id: string) {
   width: 52px;
   height: 52px;
   border-radius: 12px;
-  background: var(--vp-c-brand-soft);
-  border: 1px solid rgba(255, 45, 32, 0.2);
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--lo-card-border);
 }
 
 .inspector-agent-name {
@@ -574,7 +591,7 @@ function selectNode(id: string) {
   font-family: monospace;
   padding: 0.25rem 0.65rem;
   border-radius: 6px;
-  background: var(--vp-c-bg);
+  background: var(--vp-c-bg-soft);
   border: 1px solid var(--lo-card-border);
 }
 

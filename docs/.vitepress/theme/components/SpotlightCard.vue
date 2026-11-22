@@ -18,7 +18,7 @@ const props = withDefaults(
     badge: '',
     badgeVariant: 'brand',
     link: '',
-    spotlightColor: 'rgba(255, 45, 32, 0.12)'
+    spotlightColor: 'var(--lo-spotlight-color, rgba(255, 45, 32, 0.06))'
   }
 )
 
@@ -138,7 +138,7 @@ onUnmounted(() => {
   border-radius: 14px;
   background: var(--lo-card-bg);
   border: 1px solid var(--lo-card-border);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), var(--lo-card-shadow);
+  box-shadow: var(--lo-card-shadow);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -154,8 +154,8 @@ onUnmounted(() => {
 
 .spotlight-card.is-link:hover {
   transform: translateY(-3px);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 14px 34px -10px rgba(0, 0, 0, 0.1);
-  border-color: rgba(255, 45, 32, 0.38);
+  box-shadow: 0 10px 24px -5px rgba(15, 23, 42, 0.08);
+  border-color: rgba(255, 45, 32, 0.35);
 }
 
 .dark .spotlight-card.is-link:hover {
@@ -204,26 +204,32 @@ onUnmounted(() => {
   width: 42px;
   height: 42px;
   border-radius: 10px;
-  background: var(--lo-icon-bg, rgba(255, 45, 32, 0.06));
-  border: 1px solid var(--lo-icon-border, rgba(255, 45, 32, 0.18));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: var(--lo-icon-bg, #eef0f4);
+  border: 1px solid var(--lo-icon-border, #d4d8e2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--vp-c-brand-1);
+  color: var(--vp-c-text-1);
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark .card-icon-frame {
-  background: var(--lo-icon-bg, rgba(255, 45, 32, 0.12));
-  border-color: var(--lo-icon-border, rgba(255, 45, 32, 0.28));
+  background: var(--lo-icon-bg, #0E1626);
+  border-color: var(--lo-icon-border, rgba(255, 255, 255, 0.1));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.3);
+  color: #F8FAFC;
 }
 
 .spotlight-card:hover .card-icon-frame {
+  border-color: rgba(255, 45, 32, 0.35);
+  background: rgba(255, 45, 32, 0.08);
+  transform: scale(1.05);
+}
+
+.dark .spotlight-card:hover .card-icon-frame {
   border-color: rgba(255, 45, 32, 0.45);
   background: rgba(255, 45, 32, 0.14);
-  transform: scale(1.05);
 }
 
 /* Filament-Style Micro Badges */
@@ -239,9 +245,9 @@ onUnmounted(() => {
 }
 
 .badge-brand {
-  background: rgba(255, 45, 32, 0.08);
-  color: #FF2D20;
-  border-color: rgba(255, 45, 32, 0.25);
+  background: rgba(255, 45, 32, 0.07);
+  color: #e02619;
+  border-color: rgba(255, 45, 32, 0.22);
 }
 .dark .badge-brand {
   background: rgba(255, 45, 32, 0.15);
@@ -250,9 +256,9 @@ onUnmounted(() => {
 }
 
 .badge-cyan {
-  background: rgba(6, 182, 212, 0.08);
-  color: #0891B2;
-  border-color: rgba(6, 182, 212, 0.25);
+  background: rgba(6, 182, 212, 0.07);
+  color: #0e7490;
+  border-color: rgba(6, 182, 212, 0.22);
 }
 .dark .badge-cyan {
   background: rgba(6, 182, 212, 0.15);
@@ -261,9 +267,9 @@ onUnmounted(() => {
 }
 
 .badge-indigo {
-  background: rgba(99, 102, 241, 0.08);
-  color: #4F46E5;
-  border-color: rgba(99, 102, 241, 0.25);
+  background: rgba(99, 102, 241, 0.07);
+  color: #4338ca;
+  border-color: rgba(99, 102, 241, 0.22);
 }
 .dark .badge-indigo {
   background: rgba(99, 102, 241, 0.15);
@@ -272,9 +278,9 @@ onUnmounted(() => {
 }
 
 .badge-emerald {
-  background: rgba(16, 185, 129, 0.08);
-  color: #059669;
-  border-color: rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.07);
+  color: #047857;
+  border-color: rgba(16, 185, 129, 0.22);
 }
 .dark .badge-emerald {
   background: rgba(16, 185, 129, 0.15);
