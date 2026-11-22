@@ -44,6 +44,38 @@ features:
 
 Welcome to the documentation for **LaraOrcest** (`yousef/lara-orcest`), an enterprise-grade, prompt-driven multi-agent orchestration framework built exclusively for Laravel.
 
+<AuroraHero>
+  <template #badge>
+    <ShinyBadge
+      text="Zero Python in Laravel • OpenAI-Compatible Proxy • 100% Native PHP"
+      variant="brand"
+      icon="⚡"
+      link="/quickstart"
+    />
+  </template>
+  <template #title>
+    <BlurRevealText
+      text="Autonomous Multi-Agent Pods for Modern Laravel"
+      tag="h2"
+      :delay="60"
+      highlight="Laravel"
+    />
+  </template>
+  <template #subtitle>
+    Transform natural language prompts into production-grade Laravel features with specialized CrewAI-style roles, LangGraph-style stateful graphs, automated tests, OpenAPI specs, and safe Git workflows.
+  </template>
+  <template #actions>
+    <a href="./quickstart" class="btn-brand">Get Started →</a>
+    <a href="./use-cases" class="btn-alt">Explore Real-World Use Cases</a>
+  </template>
+</AuroraHero>
+
+---
+
+## Interactive Agent Pipeline
+
+<AgentFlowVisualizer />
+
 ---
 
 ## What is LaraOrcest?
@@ -52,6 +84,61 @@ LaraOrcest transforms natural language requirements into fully tested, documente
 
 1. **CrewAI-Style Role Specialization:** A dedicated roster of specialized software engineering agents—from Business Analysts and Software Architects to Database Specialists, QA Engineers, and Staff Reviewers—each with isolated responsibilities, strict system prompts, typed JSON output schemas, and least-privilege tool access.
 2. **LangGraph-Style Stateful Directed Graphs:** A deterministic execution engine (`GraphEngine`) governing state progression through conditional edge rules (`EdgeRule`), transactional checkpointing (`StateCheckpointer`), bounded cyclic bug-fixing loops, deterministic parallel execution waves, and Human-in-the-Loop review gates.
+
+---
+
+## Core Architecture & Featured Capabilities
+
+<div class="grid-cards">
+  <SpotlightCard
+    title="9 CrewAI-Style Pod Roles"
+    description="Dedicated agents for BA, PM, Architect, Database, Backend, QA, and Reviewer with strict JSON schemas and least-privilege tools."
+    badge="Core Roster"
+    badgeVariant="brand"
+    icon="🤖"
+    link="/agents"
+  />
+  <SpotlightCard
+    title="LangGraph-Style Directed Graphs"
+    description="Stateful RunState container, checkpointer persistence (JSON/DB), conditional EdgeRules, and bounded cyclic bug repairs."
+    badge="Engine"
+    badgeVariant="indigo"
+    icon="🔄"
+    link="/architecture"
+  />
+  <SpotlightCard
+    title="Zero Python & LiteLLM Native"
+    description="100% native PHP 8.2+ via Composer. Direct HTTP driver connects to LiteLLM Proxy, vLLM, Ollama, OpenRouter, Anthropic, or OpenAI."
+    badge="Proxy Native"
+    badgeVariant="cyan"
+    icon="⚡"
+    link="/quickstart"
+  />
+  <SpotlightCard
+    title="Multi-Vendor / Multi-Tenant DDD"
+    description="Orchestrate complete Domain-Driven Design bounded contexts (Tenancy, Catalog, Orders) with strict global TenantScope isolation."
+    badge="Use Case 5"
+    badgeVariant="brand"
+    icon="🏢"
+    link="/use-cases#use-case-5-multi-vendor-multi-tenant-platform-using-domain-driven-design-ddd"
+  />
+  <SpotlightCard
+    title="2-Site Web Scraping Pipeline"
+    description="Extract, normalize, and reconcile structured data from two target URLs guided by BA/PM criteria and dispatch to target endpoints."
+    badge="Use Case 2"
+    badgeVariant="cyan"
+    icon="🌐"
+    link="/use-cases#use-case-2-two-site-web-scraping-ingestion-pipeline"
+  />
+  <SpotlightCard
+    title="Sandboxed Tools & HITL Gates"
+    description="PathGuard filesystem boundaries, Artisan whitelists, Git branch isolation, and Human-in-the-Loop review gates."
+    badge="Security"
+    badgeVariant="emerald"
+    icon="🛡️"
+    link="/safety-and-hitl"
+  />
+</div>
 
 ```
                               ┌──────────────────────────────────┐
