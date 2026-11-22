@@ -1,0 +1,29 @@
+{
+  "$comment": "Sample specification payload for two-site web scraping with WebScrapingAgent",
+  "prompt": "Scrape competitor pricing from two vendor sites, normalize to our catalog schema, and forward the merged payload to our internal ingestion webhook.",
+  "options": {
+    "dry_run": false,
+    "web_scraping": {
+      "enabled": true,
+      "source_urls": [
+        "https://vendor-alpha.example.com/catalog/item-101",
+        "https://vendor-beta.example.com/products/item-202"
+      ],
+      "target_endpoint": "https://api.mycompany.test/webhooks/catalog-ingest",
+      "method": "POST",
+      "headers": {
+        "X-Ingestion-Token": "test_token_placeholder",
+        "Content-Type": "application/json"
+      },
+      "timeout": 30,
+      "retries": 2,
+      "max_content_chars": 10000
+    }
+  },
+  "expected_ba_invariants": [
+    "Both sites sell the same underlying SKU with different naming conventions",
+    "Prices must be parsed as floating point numbers and normalized to USD",
+    "Availability must be mapped to a boolean 'in_stock' field",
+    "The destination endpoint expects: { normalized_sku, lowest_price, sources: [{ vendor, price, in_stock }] }"
+  ]
+}

@@ -1,0 +1,87 @@
+# ==============================================================================
+# Sample LiteLLM Proxy Configuration for LaraOrcest
+# ==============================================================================
+# LiteLLM acts as an OpenAI-compatible gateway in front of 100+ LLM providers.
+# It allows LaraOrcest to route different agent roles to different models,
+# handle load balancing, retries, and spend tracking with zero Python in Laravel.
+#
+# How to run:
+#   pip install 'litellm[proxy]'
+#   litellm --config examples/litellm-config.yaml --port 4000
+#
+# Or via Docker:
+#   docker run -v $(pwd)/examples/litellm-config.yaml:/app/config.yaml \
+#     -p 4000:4000 ghcr.io/berriai/litellm:main-latest --config /app/config.yaml
+# ==============================================================================
+
+model_list:
+  # ----------------------------------------------------------------------------
+  # 1. Fast & Cost-Effective Models (Routine Agents: Database, Backend, Git)
+  # ----------------------------------------------------------------------------
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: "os.environ/OPENAI_API_KEY"
+      rpm: 3000
+
+  - model_name: orcest-fast
+    litellm_params:
+      model: gemini/gemini-2.0-flash
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  # ----------------------------------------------------------------------------
+  # 2. Frontier Reasoning Models (Architect, Reviewer, Business Analyst)
+  # ----------------------------------------------------------------------------
+  - model_name: claude-3-5-sonnet
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-20241022
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+      rpm: 1000
+
+  - model_name: orcest-reasoning
+    litellm_params:
+      model: anthropic/claude-3-5-sonnet-20241022
+      api_key: "os.environ/ANTHROPIC_API_KEY"
+
+  # ----------------------------------------------------------------------------
+  # 3. Dedicated Coding & Debugging Models (QA Agent, Fixer Agent)
+  # ----------------------------------------------------------------------------
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: "os.environ/OPENAI_API_KEY"
+      rpm: 1500
+
+  - model_name: orcest-coding
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  # ----------------------------------------------------------------------------
+  # 4. Local / Self-Hosted Fallback (Ollama)
+  # ----------------------------------------------------------------------------
+  - model_name: local-llama
+    litellm_params:
+      model: ollama/llama3.3:latest
+      api_base: "http://127.0.0.1:11434"
+
+# ------------------------------------------------------------------------------
+# LiteLLM Proxy Settings & Fallbacks
+# ------------------------------------------------------------------------------
+litellm_settings:
+  drop_params: true
+  set_verbose: false
+  request_timeout: 60
+  max_retries: 2
+  fallbacks:
+    - "claude-3-5-sonnet": ["gpt-4o"]
+    - "gpt-4o-mini": ["orcest-fast"]
+
+router_settings:
+  routing_strategy: latency-based-routing
+  model_group_alias:
+    "claude-3-5-sonnet-20241022": "claude-3-5-sonnet"
+
+general_settings:
+  # Master key for proxy management (change this in your deployment!)
+  master_key: "sk-litellm-proxy-secret-key"

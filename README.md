@@ -10,17 +10,33 @@
 
 <p align="center">
   <a href="#vision--core-philosophy">Vision</a> •
+  <a href="docs/index.md">Documentation</a> •
+  <a href="docs/quickstart.md">Quickstart</a> •
+  <a href="docs/use-cases.md">Use Cases</a> •
   <a href="#built-in-agent-roster">Agent Roster</a> •
   <a href="#directed-graph--workflow-lifecycle">Graph Lifecycle</a> •
   <a href="#key-features">Key Features</a> •
   <a href="#installation--setup">Setup</a> •
   <a href="#llm-proxy--litellm-integration">LLM Proxy</a> •
-  <a href="#usage--examples">Usage</a> •
-  <a href="#how-to-test-laraorcest">How to Test</a> •
   <a href="#sandboxed-tools--security-guardrails">Sandboxed Tools</a> •
-  <a href="#configuration-reference">Configuration</a> •
   <a href="./spec.md">Technical Spec</a>
 </p>
+
+---
+
+## 📚 Documentation & Guides
+
+Comprehensive guides and runnable examples are available in [`docs/`](docs/index.md) and [`examples/`](examples/):
+
+| Guide | Description | Link |
+| :--- | :--- | :--- |
+| **Documentation Home** | Architecture overview, CrewAI + LangGraph paradigms, zero Python vision | [docs/index.md](docs/index.md) |
+| **Quickstart Guide** | Composer path repository setup, `.env` configuration, dry-run, and resume | [docs/quickstart.md](docs/quickstart.md) |
+| **Architecture & Engine** | `RunState`, checkpointer, `EdgeRule`, parallel scheduler, and Project Memory | [docs/architecture.md](docs/architecture.md) |
+| **Agents & Model Routing** | 9 core agents, `web_scraping_agent`, `swagger_agent`, per-agent model routing | [docs/agents.md](docs/agents.md) |
+| **Safety, Sandboxing & HITL** | Sandboxed tools, `PathGuard`, and Human-in-the-Loop review gates | [docs/safety-and-hitl.md](docs/safety-and-hitl.md) |
+| **Real-World Use Cases** | End-to-end feature delivery, two-site scraping, LiteLLM proxy, HITL flow, and multi-vendor DDD platform | [docs/use-cases.md](docs/use-cases.md) |
+| **Practical Examples** | Sample `.env`, LiteLLM `config.yaml`, prompt templates, DDD workflows, and PHP scripts | [examples/](examples/) |
 
 ---
 
