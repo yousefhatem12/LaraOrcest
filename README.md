@@ -38,6 +38,34 @@ Comprehensive guides and runnable examples are available in [`docs/`](docs/index
 | **Real-World Use Cases** | End-to-end feature delivery, two-site scraping, LiteLLM proxy, HITL flow, and multi-vendor DDD platform | [docs/use-cases.md](docs/use-cases.md) |
 | **Practical Examples** | Sample `.env`, LiteLLM `config.yaml`, prompt templates, DDD workflows, and PHP scripts | [examples/](examples/) |
 
+### 🌐 Documentation Website (VitePress)
+
+LaraOrcest includes a modern, responsive documentation website built with [VitePress](https://vitepress.dev/) that directly serves the `docs/` pages:
+
+```bash
+# Install docs tooling
+npm install
+
+# Start local hot-reloading dev server (http://localhost:5173)
+npm run docs:dev
+
+# Build static production bundle into docs/.vitepress/dist
+npm run docs:build
+
+# Preview built production bundle locally
+npm run docs:preview
+```
+
+### 🚀 Automated GitHub Pages Deployment
+
+The documentation site deploys automatically to GitHub Pages on every push to `main` touching `docs/**` via the [Deploy Documentation](.github/workflows/docs.yml) workflow.
+
+**To enable GitHub Pages in your repository:**
+1. Go to **Settings** > **Pages** in your GitHub repository.
+2. Under **Build and deployment** > **Source**, choose **GitHub Actions**.
+3. Push to `main` (or run manually via **Actions** > **Deploy Documentation** > **Run workflow**).
+4. Your documentation site will be live at `https://<username>.github.io/<repository>/`!
+
 ---
 
 ## Vision & Core Philosophy

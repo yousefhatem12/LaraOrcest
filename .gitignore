@@ -7,3 +7,8 @@ composer.lock
 *.log
 .DS_Store
 /.lara-orcest/
+
+# Node & VitePress
+/node_modules/
+docs/.vitepress/dist
+docs/.vitepress/cache

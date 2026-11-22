@@ -1,3 +1,45 @@
+---
+layout: home
+
+hero:
+  name: "LaraOrcest"
+  text: "Multi-Agent Orchestration for Laravel"
+  tagline: "Prompt-driven feature delivery combining CrewAI-style role specialization with LangGraph-style stateful graphs. 100% native PHP—zero Python code."
+  image:
+    src: /logo.png
+    alt: LaraOrcest Logo
+  actions:
+    - theme: brand
+      text: Quickstart Guide
+      link: /quickstart
+    - theme: alt
+      text: Real-World Use Cases
+      link: /use-cases
+    - theme: alt
+      text: View on GitHub
+      link: https://github.com/yousefhatem12/LaraOrcest
+
+features:
+  - icon: 🤖
+    title: CrewAI-Style Pod Roles
+    details: 9 specialized agents (BA, Architect, Database, Backend, QA, Reviewer, etc.) with strict JSON schemas, least-privilege tools, and per-agent model routing.
+  - icon: 🔄
+    title: LangGraph-Style Directed Graphs
+    details: Deterministic execution with immutable RunState, checkpointing, conditional EdgeRules, parallel scheduling waves, and bounded cyclic bug fixing.
+  - icon: ⚡
+    title: Zero Python & LiteLLM Native
+    details: Runs natively in PHP 8.2+ via Composer. Direct HTTP driver connects to LiteLLM, Ollama, vLLM, OpenRouter, Anthropic, or OpenAI.
+  - icon: 🛡️
+    title: Sandboxed Tools & Guardrails
+    details: PathGuard filesystem boundaries, Artisan command whitelisting, Git feature branch isolation, and Human-in-the-Loop approval gates.
+  - icon: 🧠
+    title: Memorilla Project Memory
+    details: Compact codebase knowledge store (.lara-orcest/memory.json) indexing conventions, past architectural decisions, and bug-fix resolutions.
+  - icon: 📖
+    title: Automated Tests & OpenAPI Specs
+    details: Generates comprehensive Pest/PHPUnit test suites and complete OpenAPI 3.0+ / Swagger documentation files automatically.
+---
+
 # LaraOrcest Documentation
 
 Welcome to the documentation for **LaraOrcest** (`yousef/lara-orcest`), an enterprise-grade, prompt-driven multi-agent orchestration framework built exclusively for Laravel.
