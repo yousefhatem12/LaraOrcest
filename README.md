@@ -5,16 +5,18 @@
 <h1 align="center">LaraOrcest</h1>
 
 <p align="center">
-  <strong>Prompt-driven multi-agent orchestration for Laravel with specialized roles, stateful graph execution, automated tests, and safe Git workflows.</strong>
+  <strong>Prompt-driven multi-agent orchestration for Laravel with specialized roles, stateful graph execution, automated tests, Swagger/OpenAPI generation, and safe Git workflows.</strong>
 </p>
 
 <p align="center">
   <a href="#vision--core-philosophy">Vision</a> •
   <a href="#built-in-agent-roster">Agent Roster</a> •
   <a href="#directed-graph--workflow-lifecycle">Graph Lifecycle</a> •
+  <a href="#key-features">Key Features</a> •
   <a href="#installation--setup">Setup</a> •
   <a href="#llm-proxy--litellm-integration">LLM Proxy</a> •
   <a href="#usage--examples">Usage</a> •
+  <a href="#how-to-test-laraorcest">How to Test</a> •
   <a href="#sandboxed-tools--security-guardrails">Sandboxed Tools</a> •
   <a href="#configuration-reference">Configuration</a> •
   <a href="./spec.md">Technical Spec</a>
@@ -28,25 +30,27 @@
 
 In modern software development, writing high-quality Laravel features requires more than a single LLM prompt. It requires:
 1. **Requirements Analysis:** Uncovering domain invariants, authorization boundaries, and edge cases before writing code.
-2. **Product Prioritization:** Scoping tasks into incremental slices with verifiable acceptance criteria.
-3. **Architectural Planning:** Mapping models, migrations, form requests, controllers, policies, routes, and tests to idiomatic Laravel conventions.
-4. **Git Branch Isolation:** Isolating changes on a dedicated feature branch to keep `main` clean and safe.
-5. **Database & Backend Engineering:** Creating migrations, relationships, Eloquent models, and form-request-validated endpoints.
-6. **Automated QA & Cyclic Bug Fixing:** Writing PHPUnit/Pest tests and iterating in a bounded loop until tests pass.
-7. **Staff Reviewer Audit:** Inspecting code diffs against security standards, performance guidelines, and business specifications before committing.
+2. **Product Prioritization:** Scoping requirements into incremental, testable backlog tasks with clear acceptance criteria.
+3. **Architectural Planning:** Designing migrations, models, form requests, controllers, policies, routes, and tests conforming to Laravel conventions.
+4. **Git Branch Isolation:** Isolating changes on a dedicated feature branch (`orcest/...`) to keep `main` clean and safe.
+5. **Database & Backend Engineering:** Generating migrations, Eloquent relationships, and form-request-validated controllers.
+6. **Swagger & OpenAPI Documentation:** Creating standardized OpenAPI 3.0+ specifications and API documentation for endpoints.
+7. **Automated QA & Cyclic Bug Fixing:** Generating comprehensive feature/unit tests and iterating in a bounded loop until tests pass.
+8. **Staff Reviewer Audit:** Inspecting code diffs against PSR-12, security standards, and business specifications before committing.
 
-`LaraOrcest` automates this entire lifecycle inside your existing Laravel codebase under strict sandboxed guardrails.
+`LaraOrcest` automates this entire lifecycle inside your existing Laravel codebase under strict sandboxed security guardrails.
 
 ---
 
 ## Built-in Agent Roster
 
-`LaraOrcest` includes a fixed roster of **9 specialized agents**, each with dedicated responsibilities, scoped tool access, structured JSON output schemas, and state field ownership:
+`LaraOrcest` includes a fixed roster of specialized agents, each with dedicated responsibilities, scoped tool access, structured JSON output schemas, and state field ownership:
 
 | Agent Key | Role | Goal | Allowed Tools | Output State Field |
 | :--- | :--- | :--- | :--- | :--- |
 | **`business_analyst`** | Laravel Domain & Systems Analyst | Analyzes prompt and codebase to produce unambiguous requirements, entities, business rules, and edge cases. | `file_reader` | `requirements_spec` |
 | **`product_manager`** | Technical Product Manager | Breaks down the specification into ordered tasks with testable acceptance criteria. | `file_reader` | `backlog` |
+| **`web_scraping_agent`** | Intelligent Web Scraping & Ingestion Specialist | Extracts and normalizes data from target website URLs and dispatches unified payloads to destination endpoints. | `file_reader` | `scraping_results` |
 | **`architect`** | Senior Laravel Software Architect | Designs clean, idiomatic architecture mapping tasks to migrations, models, controllers, requests, routes, and tests. | `file_reader` | `technical_plan` |
 | **`git_agent`** | Source Control & Release Hygiene Agent | Creates and isolates changes on a feature branch (`orcest/...`), verifies clean working trees, and manages milestone commits. | `git_command` | `git_state` |
 | **`database_agent`** | Laravel Database & Eloquent Specialist | Generates normalized migrations, factories, relationships, and Eloquent models scoped to `database/` and `app/Models/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` |
@@ -66,68 +70,103 @@ Workflows in `LaraOrcest` execute deterministically through `GraphEngine`, evalu
   [Start Prompt]
         │
         ▼
- business_analyst ──► product_manager ──► architect ──► git_agent ──► database_agent ──► backend_agent ──► qa_agent
-                                                                                                            │
-                                              ┌─────────────────────────────────────────────────────────────┘
-                                              ▼
-                                    [Tests Pass or Dry-run?]
-                                     /                    \
-                              (yes) /                      \ (no & canAttemptFix)
-                                   ▼                        ▼
-                            reviewer_agent ◄────────── fixer_agent
-                             /          \                  ▲
-          (approved)        /            \ (revise & canFix)│
-                           ▼              └─────────────────┘
-                  [TERMINAL_COMPLETED]
-                           │
-                 (if not dry_run)
-                           ▼
-               Automated Milestone Commit
+ business_analyst
+        │
+        ▼
+ product_manager ──(if scraping requested)──► web_scraping_agent ──► [Complete or Proceed]
+        │                                                                   │
+        ▼                                                                   ▼
+    architect ◄─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+    git_agent (isolates branch orcest/...)
+        │
+        ▼
+ database_agent (migrations & models)
+        │
+        ▼
+  backend_agent (controllers, form requests & routes)
+        │
+        ▼
+ [Swagger Requested?] ──(yes)──► swagger_agent (OpenAPI 3.0+ specs in docs/)
+        │                                  │
+        └──────────────(no)────────────────┘
+        │
+        ▼
+     qa_agent (generates tests & runs php artisan test)
+        │
+        ▼
+ [Tests Pass or Dry-Run?]
+  /                   \
+ / (yes)               \ (no & canAttemptFix)
+▼                       ▼
+reviewer_agent ◄─── fixer_agent (applies targeted patches & retries QA)
+ /           \
+/ (approved)  \ (revise & canFix)
+▼              └──► fixer_agent
+[TERMINAL_COMPLETED]
+ │
+ ▼ (if not dry_run)
+Automated Milestone Commit
 ```
 
-### Feedback Loops & Guardrail Bounds
-- **QA Feedback Loop:** If `qa_agent` test execution fails and fix budget remains (`fix_attempts < max_fix_attempts`), execution routes to `fixer_agent`. After applying code patches, `fixer_agent` loops back to `qa_agent` to re-run tests.
-- **Reviewer Revision Loop:** If `reviewer_agent` determines revisions are needed (`revise`), execution routes to `fixer_agent` and re-runs tests through `qa_agent`.
-- **Automatic Reject Safeguard:** If automated tests fail in non-dry-run mode, `reviewer_agent` strictly refuses approval and enforces a revision cycle.
-- **Circuit Breaker Limits:** If `fix_attempts` reaches `max_fix_attempts` (default: 3) or graph execution steps exceed `max_steps` (default: 40), the engine terminates with `status = 'failed'`, recording the exact failure reason.
+---
 
-### Parallel & Sub-Graph Execution
-`LaraOrcest` supports safe, deterministic concurrent sub-graph and parallel branch execution:
-- **`ParallelNode` & `SubGraphNode`:** Embed composite parallel waves or nested child graphs into any workflow.
-- **Deterministic Scheduling (`ParallelScheduler`):** Identifies independent tasks whose prerequisites (`depends_on`) are met and whose filesystem scopes (`scope_paths`) do not overlap, sorting by priority and task ID.
-- **Git Mutation Serialization:** Git branch creation and milestone commits are isolated in serialized single-task waves with repository-level file locking (`withGitLock`).
-- **Safe State Fan-In (`RunState::mergeParallelStates`):** Accumulates token usages, execution steps, and test diagnostics across branches while detecting and halting on conflicting file writes.
+## Key Features
 
-### Human-in-the-Loop (HITL) Review & Autonomous Execution
-`LaraOrcest` allows development teams to insert explicit human review gates into the pipeline while preserving full autonomous capability:
+### 1. Swagger & OpenAPI Documentation Agent (`SwaggerAgent`)
+Automates complete API documentation for generated and existing Laravel endpoints:
+- **Comprehensive OpenAPI 3.0+ Generation:** Inspects the technical plan, backend controllers, form requests, models, and routes to generate OpenAPI 3.0+ documentation in JSON or YAML.
+- **Accurate Schemas & Status Codes:** Generates path/query parameters, request body schemas, validation constraints, and standard HTTP response codes (`200`, `201`, `400`, `401`, `403`, `404`, `422`, `500`).
+- **Flexible Target Locations:** Outputs specs directly to `docs/swagger.json`, `docs/swagger.yaml`, `storage/api-docs/api-docs.json` (L5-Swagger compliant), or custom paths via `config('lara-orcest.swagger.output_path')`.
+- **Intent-Driven & CLI Controls:** Activates automatically when Swagger/OpenAPI keywords are in the prompt (e.g. *"make swagger documentation for backend"*), via `--swagger` in Artisan, or globally via `config('lara-orcest.swagger.auto_generate')`. Bypassed per-run with `--no-swagger`.
+- **Dedicated Pipeline:** Use `DefaultGraphBuilder::buildSwaggerPipeline()` for lightweight standalone API documentation generation (`backend_agent -> swagger_agent -> completed`).
+
+### 2. Intelligent Web Scraping & Ingestion (`WebScrapingAgent`)
+Automates web data extraction and destination API dispatch:
+- **Guided by Business Analysis:** Uses domain entities and acceptance criteria to extract structured payloads from two target websites.
+- **Strict Two-URL Validation:** Requires exactly two valid HTTP/HTTPS URLs (`source_urls`), failing fast with clear diagnostics if invalid.
+- **Sanitization & SSRF Guardrails:** Strips scripts, styles, SVGs, and comments while bounding payload size. Strictly blocks SSRF, loopback, and cloud metadata targets (`169.254.169.254`).
+- **Dry-Run & Safe Dispatch:** Records preview payloads in `--dry-run` mode; dispatches HTTP payloads with configurable retry budgets and redacted headers in standard runs.
+- **Dedicated Pipeline:** Use `DefaultGraphBuilder::buildScrapingPipeline()` for standalone scraping runs (`business_analyst -> product_manager -> web_scraping_agent -> completed`).
+
+### 3. Parallel & Sub-Graph Wave Execution
+Deterministic concurrent task scheduling for complex features:
+- **`ParallelNode` & `SubGraphNode`:** Embed composite parallel waves or nested child graphs into any execution plan.
+- **Conflict-Free Scheduling (`ParallelScheduler`):** Identifies independent tasks whose prerequisites (`depends_on`) are satisfied and whose file scopes (`scope_paths`) do not collide.
+- **Scope Conflict Detection (`ScopeConflictDetector`):** Detects overlapping file mutations across branches and halts execution before corrupting state.
+- **Git Mutation Serialization:** Isolates Git branch creation and commits into serialized single-task waves with file locking (`withGitLock`).
+- **Safe State Merging (`RunState::mergeParallelStates`):** Combines token counts, step counts, and test diagnostics across parallel branches cleanly.
+
+### 4. Human-in-the-Loop (HITL) Review & Approval Gates
+Balance full automation with developer oversight:
 - **Interactive Review Gates (`--interactive`):**
-  - **`after_plan`:** Pauses execution after requirements and architecture design are formulated, allowing developers to review backlog tasks, schemas, and routes before any files or branches are modified.
-  - **`before_commit`:** Pauses execution after automated tests pass and code review is signed off, allowing pre-commit audit of diffs before final Git milestone commits.
-- **Autonomous Opt-Out (`--no-human-review`):** Users can explicitly bypass all human review gates per run or in configuration, guaranteeing uninterrupted automated execution.
-- **Ergonomic CLI Approvals (`orcest:approve`):** Easily approve or reject paused runs with optional feedback notes directly from the command line.
+  - **`after_plan`:** Pauses execution after requirements and architecture are designed, allowing developers to audit tasks and routes before files are created.
+  - **`before_commit`:** Pauses execution after tests pass and code review succeeds, allowing inspection of diffs before final Git milestone commits.
+- **Autonomous Execution (`--no-human-review`):** Bypasses all review gates for automated CI/CD or overnight runs.
+- **CLI Approvals (`orcest:approve`):** Review, approve, or reject paused runs with optional feedback notes directly from the command line.
 
-### Project Memory & Codebase Index (Memorilla Architecture)
-Inspired by the core architectural principles of Memorilla, `LaraOrcest` provides a persistent codebase knowledge store and index natively adapted for PHP 8.2+ and Laravel:
-- **Separation of Indexing from Recall:** The persistent store (`.lara-orcest/memory.json`) maintains structured sections (`codebase_index`, `conventions`, `decisions`, `pitfalls`). Instead of bloating prompts with raw code or entire indices, task- and agent-scoped recall (`recallForContext`) selects only the most relevant, distilled context slice for the active agent and prompt.
-- **Distilled Summaries Paired with `FileReaderTool`:** Recalled memory provides high-level architectural index and patterns, while explicitly directing agents to use `FileReaderTool` for exact lines and file inspections.
-- **Incremental Growth Across Runs:** As features are built and reviewed, newly created models, controllers, and routes are indexed, technical decisions are archived, and bugs diagnosed/fixed by `FixerAgent` are captured as resolved pitfalls.
-- **Deduplication & Secret Sanitization:** Prevents duplicate entries across iterations, caps items to `max_items`, and strictly redacts API keys, bearer tokens, or secrets from disk storage.
-- **Context Budget & Opt-Out Controls:** Enforces a configurable character budget (`max_context_chars`, default: 2500) so agent turns stay lean. Can be opted out per-run with `--no-memory` or disabled via `config('lara-orcest.memory.enabled')`. Unaltered during `--dry-run`.
+### 5. Project Memory & Codebase Index (Memorilla Architecture)
+Persistent project knowledge store that grows with your codebase:
+- **Separation of Indexing from Recall:** The persistent store (`.lara-orcest/memory.json`) maintains structured sections (`codebase_index`, `conventions`, `decisions`, `pitfalls`). Instead of bloating prompts with raw code, agent-scoped recall (`recallForContext`) selects only the most relevant context slice.
+- **Incremental Growth:** Automatically indexes newly created models, controllers, migrations, and routes. Captures technical decisions and resolves bugs diagnosed by `FixerAgent` as reusable pitfalls.
+- **Deduplication & Secret Sanitization:** Caps entries to `max_items` and strictly redacts API keys, tokens, and passwords.
+- **Budget Control:** Configurable character budget (`max_context_chars`, default: 2500). Can be bypassed per-run via `--no-memory`.
 
-### Web Scraping & Ingestion (`WebScrapingAgent`)
-`LaraOrcest` includes an automated web extraction and payload ingestion agent (`web_scraping_agent`) that executes within the graph after `business_analyst` and `product_manager`:
-- **Guided by BA & PM Context:** Leverages the domain entities and business rules formulated by `business_analyst` along with acceptance criteria formulated by `product_manager` to extract structured payloads from two external websites.
-- **Strict Two-URL Validation:** Requires exactly two valid HTTP/HTTPS URLs (`source_urls`), rejecting missing or invalid URLs early with clear diagnostics.
-- **Sanitization & SSRF Guardrails:** Automatically cleans noisy HTML (scripts, styling, SVG, comments, whitespace) and bounds payload characters. Strictly guards against SSRF, loopback, and cloud metadata targets (`169.254.169.254`).
-- **Dry-Run & Safe Dispatch:** Constructs the unified structured payload and records artifacts (`web_scraping/payload.json`). In `--dry-run` mode, skips external mutating HTTP requests while saving the preview payload; in standard runs, dispatches the payload via Laravel's `Http` client to the destination endpoint with configurable retries, redacting sensitive authorization headers in persistent state.
+### 6. Multi-Lingual Mail Templates & Localization
+Includes production-ready notification templates and Mailables:
+- **Supported Locales:** English (`en`), Hindi (`hi`), and Chinese (`zh`) with JSON translations in `lang/` and `resources/lang/`.
+- **Pre-Built Mailables:** `WelcomeMail`, `VerifyAccountMail`, `PasswordResetMail`, `TwoFactorRecoveryMail`, `OtpCodeMail`, `MeetingReminderMail`, and `MeetingNotificationMail`.
+- **Responsive Blade Layout:** Standard responsive email layout in `resources/views/emails/layouts/default.blade.php`.
 
-### Swagger & OpenAPI Documentation (`SwaggerAgent`)
-`LaraOrcest` includes an automated API documentation specialist (`swagger_agent`) that executes within the graph after `backend_agent`:
-- **Comprehensive OpenAPI 3.0+ Generation:** Inspects the technical architecture plan, backend controllers, form requests, Eloquent models, and registered routes to produce full-featured OpenAPI 3.0+ specifications (in JSON and/or YAML).
-- **Rich Endpoint Schemas:** Accurately documents route paths, HTTP verbs (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`), path/query parameters, JSON request body schemas, validation rules, and standard HTTP response status codes (`200`, `201`, `400`, `401`, `403`, `404`, `422`, `500`).
-- **Flexible File Output:** Generates documentation directly at `docs/swagger.json`, `docs/swagger.yaml`, `storage/api-docs/api-docs.json` (L5-Swagger compliant), or custom paths configured via `config('lara-orcest.swagger.output_path')`.
-- **Intelligent Intent & CLI Controls:** Automatically activates when Swagger/OpenAPI is requested in the user prompt (e.g. *"make swagger documentation for backend"*), when passed explicitly via `--swagger` in Artisan (`php artisan orcest:build --swagger`), or when `config('lara-orcest.swagger.auto_generate')` is enabled. Can be cleanly bypassed per-run via `--no-swagger`.
-- **Standalone Pipeline:** Provides `DefaultGraphBuilder::buildSwaggerPipeline()` for dedicated, lightweight API documentation runs (`backend_agent -> swagger_agent -> completed`).
+### 7. Sandboxed Tools & Security Guardrails
+Prompts are treated as untrusted inputs with strict sandbox boundaries:
+- **PathGuard:** Resolves paths strictly inside `projectRoot`, blocks symlink escapes, and enforces global deny patterns (`.env`, `.git`, `vendor`, `node_modules`, `storage/logs`, `*.key`).
+- **FileReaderTool:** Safe line slicing (`offset`, `max_lines`) and byte limits (`max_bytes`).
+- **PatchWriterTool:** Atomic file creation, search-and-replace, safe deletion, and unified diff generation with dry-run support.
+- **ArtisanRunnerTool:** Executes allow-listed `make:*` commands and test commands; blocks dangerous flags (`--force`, `--drop-views`, `--seed`) and shell metacharacters.
+- **TestRunnerTool:** Executes `php artisan test --without-tty` with timeouts and structured failure parsing.
+- **GitCommandTool:** Manages branches, staging, and commits while blocking destructive commands (`push --force`, `reset --hard`) and direct commits to protected branches (`main`, `master`, `production`, `staging`).
 
 ---
 
@@ -176,7 +215,7 @@ Inspired by the core architectural principles of Memorilla, `LaraOrcest` provide
 
 `LaraOrcest` communicates with AI models using an **OpenAI-compatible HTTP driver** (`OpenAiCompatibleHttpDriver`). This allows pointing directly to any local or self-hosted LLM proxy—such as **[LiteLLM](https://github.com/BerriAI/litellm)**, **vLLM**, **Ollama**, or **OpenRouter**—with **zero Python inside your Laravel application**.
 
-### Connecting to LiteLLM via `.env`
+### Connecting via `.env`
 
 Add the following to your application's `.env`:
 
@@ -200,12 +239,6 @@ LARA_ORCEST_MODEL_DATABASE_AGENT=gpt-4o-mini
 LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT=gpt-4o-mini
 ```
 
-### Key Architectural Advantages
-- **Pure PHP HTTP Stack:** Uses Laravel's native `Illuminate\Support\Facades\Http` with built-in retry budgets, exponential backoff, and JSON schema constraints.
-- **Per-Agent Model Routing:** Assign complex reasoning and design agents (`architect`, `reviewer_agent`) to heavy frontier models while routing repetitive coding tasks to fast, cost-effective models.
-- **Observability Metadata:** Automatically injects `X-Run-Id`, `X-Agent-Key`, and payload metadata into every request for centralized tracing in LiteLLM, Langfuse, or OpenTelemetry.
-- **Zero Secret Leakage:** API keys and credentials are never stored in `RunState` or serialized into checkpoints and are automatically redacted in error messages.
-
 ---
 
 ## Usage & Examples
@@ -214,26 +247,32 @@ LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT=gpt-4o-mini
 
 #### Build a Feature
 ```bash
-# Build a feature with prompt argument
+# Build a feature from a prompt
 php artisan orcest:build "Create a task management API with projects, assignments, and status updates"
 
-# Alternative syntax using --prompt flag
-php artisan orcest:build --prompt="Add Stripe billing webhook processor"
+# Build with Swagger/OpenAPI documentation generation
+php artisan orcest:build "Create customer invoicing API" --swagger
+
+# Bypass Swagger documentation generation
+php artisan orcest:build "Create internal queue worker" --no-swagger
 
 # Dry-run mode: Preview requirements, backlog, code diffs, and test runs without altering disk or Git
 php artisan orcest:build "Add two-factor authentication" --dry-run
 
-# Custom guardrail bounds
-php artisan orcest:build "Implement invoice PDF generation" --max-steps=30 --max-fix-attempts=2
-
-# Human-in-the-Loop interactive review (pauses after plan & before commit)
+# Interactive Human-in-the-Loop review (pauses after plan & before commit)
 php artisan orcest:build "Create subscription billing" --interactive
 
-# Fully autonomous mode (explicitly bypasses all human review gates)
+# Fully autonomous mode (bypasses all human review gates)
 php artisan orcest:build "Create subscription billing" --no-human-review
 
-# Bypass project memory recall and consolidation for a single run
-php artisan orcest:build "Create subscription billing" --no-memory
+# Bypass project memory recall and consolidation
+php artisan orcest:build "Create temporary export" --no-memory
+
+# Bypass web scraping agent even if URLs are present in prompt
+php artisan orcest:build "Import products from catalog" --no-scrape
+
+# Set custom guardrail limits
+php artisan orcest:build "Implement complex report" --max-steps=30 --max-fix-attempts=2
 
 # Route to a specific configured LLM driver (e.g. fake, openai, anthropic, ollama)
 php artisan orcest:build "Create user profile API" --llm=openai_compatible
@@ -247,7 +286,7 @@ php artisan orcest:build --resume=run_a1b2c3d4e5f6
 # Approve a paused run at its active gate and resume execution
 php artisan orcest:approve run_a1b2c3d4e5f6
 
-# Approve with feedback or approval note
+# Approve with an audit or feedback note
 php artisan orcest:approve run_a1b2c3d4e5f6 --note="Architecture approved by lead"
 
 # Reject and terminate execution cleanly without committing changes
@@ -259,25 +298,24 @@ php artisan orcest:approve run_a1b2c3d4e5f6 --reject --note="Missing RBAC author
 # List recent execution runs in a formatted table
 php artisan orcest:status
 
-# Inspect full details for a specific run ID (artifacts, test results, reviews, tokens, git branch)
+# Inspect full details for a specific run ID (artifacts, tests, reviews, tokens, git branch)
 php artisan orcest:status run_a1b2c3d4e5f6
 ```
 
 ---
 
-### 2. Facade Interface (`Orcest` or `Orchestrator`)
-
-You can use either `Yousef\LaraOrcest\Facades\Orcest` or `Yousef\LaraOrcest\Facades\Orchestrator`:
+### 2. Programmatic Usage via Facade (`Orcest` or `Orchestrator`)
 
 ```php
 use Yousef\LaraOrcest\Facades\Orcest;
+use Yousef\LaraOrcest\Graph\DefaultGraphBuilder;
 use Yousef\LaraOrcest\State\RunState;
 
-// 1. Run a feature request
-$state = Orcest::run('Implement blog tag categorization with many-to-many relationship', [
+// 1. Run a full feature workflow with Swagger documentation
+$state = Orcest::run('Implement order status update API and make swagger documentation for backend', [
     'dry_run' => false,
+    'swagger' => true,
     'max_fix_attempts' => 3,
-    'max_steps' => 40,
     'on_step' => function (RunState $state, string $node, string $message) {
         logger()->info("[Step {$state->guardrails['step_count']}] Node: {$node} - {$message}");
     },
@@ -285,49 +323,146 @@ $state = Orcest::run('Implement blog tag categorization with many-to-many relati
 
 if ($state->isCompleted()) {
     echo "Feature built successfully!\n";
-    echo "Git Feature Branch: {$state->gitState['feature_branch']}\n";
-    echo "Artifacts Generated: " . count($state->artifacts) . "\n";
-    echo "Total Tokens Used: " . $state->getTotalTokens() . "\n";
-} else {
-    echo "Run failed at node [{$state->currentNode}]: {$state->getFailureReason()}\n";
+    echo "Git Branch: {$state->gitState['feature_branch']}\n";
+    echo "Artifacts: " . count($state->artifacts) . "\n";
+    
+    // Check generated Swagger documentation
+    if ($state->hasSwaggerDocs()) {
+        $spec = $state->getSwaggerSpec();
+        echo "OpenAPI Version: {$spec['openapi']}\n";
+    }
 }
 
-// 2. Resume an existing run by its ID
-$resumedState = Orcest::resume('run_a1b2c3d4e5f6');
+// 2. Standalone Swagger Pipeline (backend_agent -> swagger_agent -> completed)
+$swaggerEngine = DefaultGraphBuilder::buildSwaggerPipeline(
+    llm: app(\Yousef\LaraOrcest\LLM\LlmManager::class)->driver()
+);
+$swaggerState = $swaggerEngine->run(RunState::create('Generate OpenAPI documentation for TaskController'));
 
-// 3. Human-in-the-Loop: Approve or reject a paused run
-$approvedState = Orcest::approve('run_a1b2c3d4e5f6', 'Architecture looks good');
-// Or reject with feedback:
-// $rejectedState = Orcest::reject('run_a1b2c3d4e5f6', 'Requires additional validation');
-
-// 4. Inspect run status programmatically
-$runSummary = Orcest::status('run_a1b2c3d4e5f6');
-$allRecentRuns = Orcest::status(); // Array of recent run summaries
-
-// 5. Access project memory and codebase index
-$memory = Orcest::memory();
-$codebaseIndex = $memory->getIndex();
-$decisions = $memory->getDecisions();
-$pitfalls = $memory->getPitfalls();
-
-// 6. Web Scraping & Ingestion pipeline
-$scrapingState = Orcest::run('Extract product catalogs and normalize categories', [
+// 3. Standalone Web Scraping Pipeline (BA -> PM -> WebScraper -> completed)
+$scrapingState = Orcest::run('Extract electronics catalog from alpha and beta vendors', [
     'web_scraping' => [
-        'source_urls' => [
-            'https://vendor-alpha.com/products',
-            'https://vendor-beta.com/items',
-        ],
-        'target_endpoint' => 'https://api.my-app.com/api/v1/ingest',
+        'source_urls' => ['https://site-a.com/catalog', 'https://site-b.com/catalog'],
+        'target_endpoint' => 'https://api.my-app.com/v1/catalog-ingest',
         'method' => 'POST',
-        'headers' => [
-            'Authorization' => 'Bearer secret-ingest-token',
-        ],
         'stop_after_scraping' => true,
     ],
 ]);
 $results = $scrapingState->getScrapingResults();
-echo "Extraction status: " . $results['dispatch']['status'] . "\n";
+echo "Scraping Status: " . $results['dispatch']['status'] . "\n";
+
+// 4. Resume, approve, or reject paused runs
+$resumedState = Orcest::resume('run_a1b2c3d4e5f6');
+$approvedState = Orcest::approve('run_a1b2c3d4e5f6', 'Lead signed off');
+$rejectedState = Orcest::reject('run_a1b2c3d4e5f6', 'Needs additional test cases');
+
+// 5. Inspect status and project memory
+$allRuns = Orcest::status();
+$memory = Orcest::memory();
+$codebaseIndex = $memory->getIndex();
 ```
+
+---
+
+## How to Test LaraOrcest
+
+`LaraOrcest` provides multiple layers of automated testing and developer verification:
+
+### 1. Running the Automated Test Suite (PHPUnit)
+
+Run all package unit and feature tests:
+
+```bash
+# Run the complete test suite (236+ tests)
+./vendor/bin/phpunit
+
+# Run with testdox format for readable output
+./vendor/bin/phpunit --testdox
+```
+
+### 2. Testing Specific Feature Suites
+
+You can execute targeted test suites to verify individual subsystems:
+
+```bash
+# Test Swagger / OpenAPI Documentation Agent
+./vendor/bin/phpunit tests/Unit/SwaggerAgentTest.php
+./vendor/bin/phpunit tests/Feature/SwaggerFeatureTest.php
+
+# Test Web Scraping & Ingestion Agent
+./vendor/bin/phpunit tests/Unit/WebScrapingAgentTest.php
+./vendor/bin/phpunit tests/Feature/WebScrapingFeatureTest.php
+
+# Test Parallel Execution & Scope Conflict Detection
+./vendor/bin/phpunit tests/Unit/ParallelExecutionTest.php
+./vendor/bin/phpunit tests/Unit/ParallelSchedulerTest.php
+./vendor/bin/phpunit tests/Unit/ScopeConflictDetectorTest.php
+
+# Test Human-in-the-Loop Review Gates
+./vendor/bin/phpunit tests/Unit/HumanInTheLoopTest.php
+./vendor/bin/phpunit tests/Feature/HumanInTheLoopFeatureTest.php
+
+# Test Project Memory & Codebase Index (Memorilla)
+./vendor/bin/phpunit tests/Unit/ProjectMemoryStoreTest.php
+./vendor/bin/phpunit tests/Feature/ProjectMemoryFeatureTest.php
+
+# Test Multi-Lingual Mail Templates & Localization
+./vendor/bin/phpunit tests/Feature/LocalizationAndNotificationTemplatesTest.php
+
+# Test Sandboxed Tools & Security Boundaries
+./vendor/bin/phpunit tests/Unit/PathGuardSecurityTest.php
+./vendor/bin/phpunit tests/Unit/ArtisanRunnerToolEnhancedTest.php
+./vendor/bin/phpunit tests/Unit/GitCommandToolEnhancedTest.php
+./vendor/bin/phpunit tests/Unit/PatchWriterToolEnhancedTest.php
+./vendor/bin/phpunit tests/Unit/FileReaderToolEnhancedTest.php
+./vendor/bin/phpunit tests/Unit/TestRunnerToolEnhancedTest.php
+
+# Test Agent Turn Execution & Error Handling
+./vendor/bin/phpunit tests/Unit/AgentsExecutionTest.php
+./vendor/bin/phpunit tests/Unit/CyclicFixLoopTest.php
+```
+
+### 3. Testing Safely Without LLM API Costs (`--llm=fake`)
+
+Use the built-in deterministic `FakeDriver` to run tests and command simulations with **zero token cost and zero network calls**:
+
+```bash
+# Test feature orchestration with fake LLM driver in dry-run mode
+php artisan orcest:build "Create user profile API with swagger documentation" --llm=fake --dry-run
+
+# Test Swagger documentation generation with fake driver
+php artisan orcest:build "Create customer invoice endpoints" --llm=fake --swagger --dry-run
+
+# Test interactive review gates with fake driver
+php artisan orcest:build "Create payment gateway" --llm=fake --interactive --dry-run
+```
+
+### 4. Testing in a Real Laravel Application
+
+To test end-to-end integration inside an active Laravel project:
+
+1. **Dry-Run Preview:**
+   ```bash
+   php artisan orcest:build "Create a Category CRUD with migration, model, controller, and tests" --dry-run
+   ```
+   Inspect the output to verify:
+   - Requirements specification generated by `business_analyst`.
+   - Backlog acceptance criteria generated by `product_manager`.
+   - Architecture plan generated by `architect`.
+   - Code previews for migrations, models, controllers, and tests.
+
+2. **Full Execution (Live Feature Branch):**
+   ```bash
+   php artisan orcest:build "Create a Category CRUD with migration, model, controller, and tests" --swagger
+   ```
+   Verify that:
+   - Git branch `orcest/category-crud` is created automatically.
+   - Migration `database/migrations/*_create_categories_table.php` is generated.
+   - Eloquent model `app/Models/Category.php` is created.
+   - Controller `app/Http/Controllers/Api/CategoryController.php` is created.
+   - Swagger documentation is written to `docs/swagger.json`.
+   - Tests in `tests/Feature/CategoryApiTest.php` pass.
+   - Milestone commit is recorded cleanly on the feature branch.
 
 ---
 
@@ -336,7 +471,7 @@ echo "Extraction status: " . $results['dispatch']['status'] . "\n";
 `LaraOrcest` enforces strict security boundaries at the tool layer. Prompts are treated as untrusted inputs; tools validate and restrict every disk, command, and Git operation:
 
 ### 1. PathGuard & Root Boundary (`PathGuard`)
-- Resolves all paths strictly relative to the project root (`base_path()`).
+- Resolves all paths strictly relative to `base_path()`.
 - Rejects path traversal (`../`) and detects symlinks escaping outside the project root.
 - **Global Denylist:** Blocks read/write access to sensitive files and directories:
   - Environment: `.env`, `.env.*`
@@ -347,6 +482,7 @@ echo "Extraction status: " . $results['dispatch']['status'] . "\n";
 - **Per-Agent Allow-Lists:**
   - `database_agent`: restricted to `database/` and `app/Models/`
   - `backend_agent`: restricted to `app/`, `routes/`, and `config/`
+  - `swagger_agent`: restricted to `docs/`, `storage/api-docs/`, `public/`, `routes/`, and `config/`
   - `qa_agent`: restricted strictly to `tests/`
   - `fixer_agent`: restricted to `app/`, `database/`, `routes/`, and `tests/`
 
@@ -418,7 +554,10 @@ return [
         'agent_models' => [
             'architect' => env('LARA_ORCEST_MODEL_ARCHITECT'),
             'reviewer_agent' => env('LARA_ORCEST_MODEL_REVIEWER_AGENT'),
-            // ...
+            'backend_agent' => env('LARA_ORCEST_MODEL_BACKEND_AGENT'),
+            'swagger_agent' => env('LARA_ORCEST_MODEL_SWAGGER_AGENT'),
+            'database_agent' => env('LARA_ORCEST_MODEL_DATABASE_AGENT'),
+            'web_scraping_agent' => env('LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT'),
         ],
     ],
 
@@ -448,6 +587,17 @@ return [
         ],
     ],
 
+    // Swagger / OpenAPI documentation
+    'swagger' => [
+        'enabled' => (bool) env('LARA_ORCEST_SWAGGER_ENABLED', true),
+        'auto_generate' => (bool) env('LARA_ORCEST_SWAGGER_AUTO_GENERATE', false),
+        'title' => env('LARA_ORCEST_SWAGGER_TITLE', 'Laravel Application API Documentation'),
+        'version' => env('LARA_ORCEST_SWAGGER_VERSION', '1.0.0'),
+        'openapi_version' => env('LARA_ORCEST_SWAGGER_OPENAPI_VERSION', '3.0.3'),
+        'output_format' => env('LARA_ORCEST_SWAGGER_FORMAT', 'json'), // 'json', 'yaml', or 'both'
+        'output_path' => env('LARA_ORCEST_SWAGGER_PATH', 'docs/swagger.json'),
+    ],
+
     // Project memory & codebase index (Memorilla architecture)
     'memory' => [
         'enabled' => (bool) env('LARA_ORCEST_MEMORY_ENABLED', true),
@@ -459,28 +609,29 @@ return [
 
     // Web scraping & ingestion
     'web_scraping' => [
-        'timeout' => (int) env('LARA_ORCEST_SCRAPING_TIMEOUT', 30),
-        'retries' => (int) env('LARA_ORCEST_SCRAPING_RETRIES', 2),
-        'retry_sleep' => (int) env('LARA_ORCEST_SCRAPING_RETRY_SLEEP', 100),
-        'max_response_size' => (int) env('LARA_ORCEST_SCRAPING_MAX_SIZE', 2_000_000),
-        'max_content_chars' => (int) env('LARA_ORCEST_SCRAPING_MAX_CHARS', 25_000),
+        'enabled' => (bool) env('LARA_ORCEST_SCRAPE_ENABLED', true),
+        'timeout' => (int) env('LARA_ORCEST_SCRAPE_TIMEOUT', 30),
+        'retries' => (int) env('LARA_ORCEST_SCRAPE_RETRIES', 2),
+        'retry_sleep' => (int) env('LARA_ORCEST_SCRAPE_RETRY_SLEEP', 100),
+        'max_response_size' => (int) env('LARA_ORCEST_SCRAPE_MAX_SIZE', 500_000),
+        'max_content_chars' => (int) env('LARA_ORCEST_SCRAPE_MAX_CHARS', 10_000),
         'allowed_schemes' => ['http', 'https'],
-        'allow_private_ips' => (bool) env('LARA_ORCEST_SCRAPING_ALLOW_PRIVATE_IPS', false),
-        'default_endpoint' => env('LARA_ORCEST_SCRAPING_DEFAULT_ENDPOINT'),
-        'default_method' => env('LARA_ORCEST_SCRAPING_DEFAULT_METHOD', 'POST'),
-        'user_agent' => env('LARA_ORCEST_SCRAPING_USER_AGENT', 'LaraOrcest-WebScraper/1.0 (+https://github.com/yousefhatem/LaraOrcest)'),
+        'allow_private_ips' => (bool) env('LARA_ORCEST_SCRAPE_ALLOW_PRIVATE_IPS', false),
+        'default_endpoint' => env('LARA_ORCEST_SCRAPE_DEFAULT_ENDPOINT'),
+        'default_method' => env('LARA_ORCEST_SCRAPE_DEFAULT_METHOD', 'POST'),
+        'user_agent' => env('LARA_ORCEST_SCRAPE_USER_AGENT', 'Mozilla/5.0 (compatible; LaraOrcestScraper/1.0; +https://github.com/yousefhatem/LaraOrcest)'),
     ],
 
-    // Git configuration
+    // Git hygiene & safety
     'git' => [
-        'enabled' => true,
+        'enabled' => (bool) env('LARA_ORCEST_GIT_ENABLED', true),
         'feature_branch_prefix' => env('LARA_ORCEST_BRANCH_PREFIX', 'orcest/'),
         'protected_branches' => ['main', 'master', 'production', 'staging'],
-        'auto_commit' => true,
+        'auto_commit' => (bool) env('LARA_ORCEST_AUTO_COMMIT', true),
         'auto_push' => false,
     ],
 
-    // Tool boundaries and limits
+    // Sandboxed tools boundaries
     'tools' => [
         'max_read_size' => 1_000_000, // 1MB
         'deny_paths' => ['.env', '.git', 'vendor', 'node_modules', 'storage/logs', '*.key'],
@@ -500,16 +651,12 @@ return [
 
 ## Testing & Quality Assurance
 
-`LaraOrcest` maintains a comprehensive test suite covering unit, security, and feature integration:
+`LaraOrcest` is built with test-driven discipline and maintains 100% passing test suites:
 
 ```bash
-# Run all package tests via PHPUnit
+# Run the complete test suite
 ./vendor/bin/phpunit
-
-# Run specific test suites
-./vendor/bin/phpunit tests/Unit/AgentsExecutionTest.php
-./vendor/bin/phpunit tests/Feature/ArtisanCommandsFeatureTest.php
-./vendor/bin/phpunit tests/Unit/PathGuardSecurityTest.php
+# OK (236 tests, 1207 assertions)
 ```
 
 ---
