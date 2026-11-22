@@ -72,6 +72,7 @@ return [
             'fixer_agent' => env('LARA_ORCEST_MODEL_FIXER_AGENT'),
             'reviewer_agent' => env('LARA_ORCEST_MODEL_REVIEWER_AGENT'),
             'web_scraping_agent' => env('LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT'),
+            'swagger_agent' => env('LARA_ORCEST_MODEL_SWAGGER_AGENT'),
         ],
 
         'providers' => [
@@ -183,6 +184,7 @@ return [
     |
     */
     'web_scraping' => [
+        'enabled' => (bool) env('LARA_ORCEST_SCRAPE_ENABLED', true),
         'timeout' => (int) env('LARA_ORCEST_SCRAPE_TIMEOUT', 30),
         'retries' => (int) env('LARA_ORCEST_SCRAPE_RETRIES', 2),
         'retry_sleep' => (int) env('LARA_ORCEST_SCRAPE_RETRY_SLEEP', 100), // ms
@@ -191,8 +193,29 @@ return [
         'allowed_schemes' => ['http', 'https'],
         'allow_private_ips' => (bool) env('LARA_ORCEST_SCRAPE_ALLOW_PRIVATE_IPS', false),
         'default_endpoint' => env('LARA_ORCEST_SCRAPE_DEFAULT_ENDPOINT', null),
+        'target_endpoint' => env('LARA_ORCEST_SCRAPE_DEFAULT_ENDPOINT', null),
+        'source_urls' => null,
         'default_method' => env('LARA_ORCEST_SCRAPE_DEFAULT_METHOD', 'POST'),
         'user_agent' => env('LARA_ORCEST_SCRAPE_USER_AGENT', 'Mozilla/5.0 (compatible; LaraOrcestScraper/1.0; +https://github.com/yousefhatem/LaraOrcest)'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Swagger / OpenAPI Documentation Agent Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for SwaggerAgent generating OpenAPI specifications, schemas,
+    | parameter definitions, and documentation files for backend endpoints.
+    |
+    */
+    'swagger' => [
+        'enabled' => (bool) env('LARA_ORCEST_SWAGGER_ENABLED', true),
+        'auto_generate' => (bool) env('LARA_ORCEST_SWAGGER_AUTO_GENERATE', false),
+        'title' => env('LARA_ORCEST_SWAGGER_TITLE', 'Laravel Application API Documentation'),
+        'version' => env('LARA_ORCEST_SWAGGER_VERSION', '1.0.0'),
+        'openapi_version' => env('LARA_ORCEST_SWAGGER_OPENAPI_VERSION', '3.0.3'),
+        'output_format' => env('LARA_ORCEST_SWAGGER_FORMAT', 'json'), // 'json', 'yaml', or 'both'
+        'output_path' => env('LARA_ORCEST_SWAGGER_PATH', 'docs/swagger.json'),
     ],
 
     /*

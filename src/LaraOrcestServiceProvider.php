@@ -14,6 +14,7 @@ use Yousef\LaraOrcest\Agents\GitAgent;
 use Yousef\LaraOrcest\Agents\ProductManagerAgent;
 use Yousef\LaraOrcest\Agents\QaAgent;
 use Yousef\LaraOrcest\Agents\ReviewerAgent;
+use Yousef\LaraOrcest\Agents\SwaggerAgent;
 use Yousef\LaraOrcest\Agents\WebScrapingAgent;
 use Yousef\LaraOrcest\Commands\OrcestApproveCommand;
 use Yousef\LaraOrcest\Commands\OrcestBuildCommand;
@@ -113,6 +114,7 @@ class LaraOrcestServiceProvider extends ServiceProvider
         $this->app->bind(FixerAgent::class, fn () => new FixerAgent());
         $this->app->bind(ReviewerAgent::class, fn () => new ReviewerAgent());
         $this->app->bind(WebScrapingAgent::class, fn () => new WebScrapingAgent());
+        $this->app->bind(SwaggerAgent::class, fn () => new SwaggerAgent());
 
         $this->app->singleton('lara-orcest', function ($app) {
             return new Orchestrator(
@@ -130,6 +132,12 @@ class LaraOrcestServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Load translations and views
+        $this->loadTranslationsFrom(__DIR__ . '/../resources/lang', 'lara-orcest');
+        $this->loadJsonTranslationsFrom(__DIR__ . '/../resources/lang');
+        $this->loadViewsFrom(__DIR__ . '/../resources/views', 'emails');
+        $this->loadViewsFrom(__DIR__ . '/../resources/views', 'lara-orcest');
+
         if ($this->app->runningInConsole()) {
             // Publish configuration
             $this->publishes([
@@ -140,6 +148,16 @@ class LaraOrcestServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__ . '/../database/migrations/2026_01_01_000000_create_orcest_runs_table.php.stub' => database_path('migrations/' . date('Y_m_d_His') . '_create_orcest_runs_table.php'),
             ], 'lara-orcest-migrations');
+
+            // Publish language resource files
+            $this->publishes([
+                __DIR__ . '/../resources/lang' => $this->app->langPath(),
+            ], 'lara-orcest-lang');
+
+            // Publish email and notification views
+            $this->publishes([
+                __DIR__ . '/../resources/views' => resource_path('views/vendor/lara-orcest'),
+            ], 'lara-orcest-views');
 
             // Register artisan commands
             $this->commands([

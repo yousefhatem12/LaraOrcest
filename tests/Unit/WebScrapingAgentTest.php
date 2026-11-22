@@ -276,4 +276,124 @@ class WebScrapingAgentTest extends TestCase
         $this->assertTrue($results['sources_fetched']['https://working-site.com']['successful']);
         $this->assertContains('failing-site returned HTTP 500', $results['warnings']);
     }
+
+    public function test_resolves_urls_and_endpoint_from_requirements_spec(): void
+    {
+        $state = RunState::create('Domain requirement prompt')
+            ->withRequirementsSpec([
+                'domain_entities' => ['ScrapedLead'],
+                'source_urls' => ['https://leads-source-1.com/list', 'https://leads-source-2.com/list'],
+                'target_endpoint' => 'https://crm.internal/api/leads',
+            ]);
+
+        $this->assertTrue($state->hasScrapingUrls());
+        $this->assertTrue($state->hasScrapingEndpoint());
+        $this->assertTrue($state->shouldRunWebScraper());
+
+        $resolved = $this->agent->resolveUrlsAndEndpoint($state);
+        $this->assertEquals(['https://leads-source-1.com/list', 'https://leads-source-2.com/list'], $resolved['source_urls']);
+        $this->assertEquals('https://crm.internal/api/leads', $resolved['target_endpoint']);
+    }
+
+    public function test_resolves_urls_and_endpoint_from_backlog_tasks(): void
+    {
+        $state = RunState::create('Backlog requirement prompt')
+            ->withBacklog([
+                [
+                    'id' => 'TASK-SCRAPE-1',
+                    'title' => 'Extract store listings',
+                    'priority' => 1,
+                    'source_urls' => ['https://store-a.com/catalog', 'https://store-b.com/catalog'],
+                    'target_endpoint' => 'https://ingest.retailer.com/v1/products',
+                    'acceptance_criteria' => ['Extract store catalog'],
+                ],
+            ]);
+
+        $this->assertTrue($state->hasScrapingUrls());
+        $this->assertTrue($state->hasScrapingEndpoint());
+        $this->assertTrue($state->shouldRunWebScraper());
+
+        $resolved = $this->agent->resolveUrlsAndEndpoint($state);
+        $this->assertEquals(['https://store-a.com/catalog', 'https://store-b.com/catalog'], $resolved['source_urls']);
+        $this->assertEquals('https://ingest.retailer.com/v1/products', $resolved['target_endpoint']);
+    }
+
+    public function test_resolves_urls_and_endpoint_from_configuration(): void
+    {
+        config([
+            'lara-orcest.web_scraping.source_urls' => ['https://cfg-alpha.org/data', 'https://cfg-beta.org/data'],
+            'lara-orcest.web_scraping.default_endpoint' => 'https://api.destination-cfg.org/webhook',
+        ]);
+
+        $state = RunState::create('Run configured scraping task');
+
+        $this->assertTrue($state->hasScrapingUrls());
+        $this->assertTrue($state->hasScrapingEndpoint());
+        $this->assertTrue($state->shouldRunWebScraper());
+
+        $resolved = $this->agent->resolveUrlsAndEndpoint($state);
+        $this->assertEquals(['https://cfg-alpha.org/data', 'https://cfg-beta.org/data'], $resolved['source_urls']);
+        $this->assertEquals('https://api.destination-cfg.org/webhook', $resolved['target_endpoint']);
+    }
+
+    public function test_should_not_activate_when_only_urls_provided_without_endpoint(): void
+    {
+        config(['lara-orcest.web_scraping.default_endpoint' => null]);
+
+        $state = RunState::create('Prompt with 2 urls: https://site-1.com and https://site-2.com');
+
+        $this->assertTrue($state->hasScrapingUrls());
+        $this->assertFalse($state->hasScrapingEndpoint());
+        $this->assertFalse($state->shouldRunWebScraper(), 'Web scraping must NOT activate when endpoint is missing');
+    }
+
+    public function test_should_not_activate_when_only_one_url_provided(): void
+    {
+        $state = RunState::create('Prompt with 1 url https://single-site.com', [
+            'web_scraping' => [
+                'source_urls' => ['https://single-site.com'],
+                'target_endpoint' => 'https://api.destination.com/ingest',
+            ],
+        ]);
+
+        $this->assertFalse($state->hasScrapingUrls(), 'Expecting two target URLs; 1 URL should fail activation check');
+        $this->assertTrue($state->hasScrapingEndpoint());
+        $this->assertFalse($state->shouldRunWebScraper());
+    }
+
+    public function test_should_not_activate_when_explicitly_disabled_in_config_or_options(): void
+    {
+        // 1. Explicitly disabled via option
+        $stateDisabledViaOption = RunState::create(
+            'Scrape https://a.com and https://b.com and send to https://dest.com',
+            ['no_scrape' => true]
+        );
+        $this->assertTrue($stateDisabledViaOption->isWebScrapingDisabled());
+        $this->assertFalse($stateDisabledViaOption->shouldRunWebScraper());
+
+        // 2. Explicitly disabled via metadata
+        $stateDisabledViaMeta = RunState::create(
+            'Scrape https://a.com and https://b.com and send to https://dest.com',
+            ['disable_web_scraping' => true]
+        );
+        $this->assertTrue($stateDisabledViaMeta->isWebScrapingDisabled());
+        $this->assertFalse($stateDisabledViaMeta->shouldRunWebScraper());
+
+        // 3. Explicitly disabled via config
+        config(['lara-orcest.web_scraping.enabled' => false]);
+        $stateDisabledViaConfig = RunState::create('Scrape https://a.com and https://b.com and send to https://dest.com');
+        $this->assertTrue($stateDisabledViaConfig->isWebScrapingDisabled());
+        $this->assertFalse($stateDisabledViaConfig->shouldRunWebScraper());
+    }
+
+    public function test_cleanly_bypasses_when_no_scraping_requested(): void
+    {
+        config(['lara-orcest.web_scraping.default_endpoint' => null]);
+        $state = RunState::create('Build a standard blog feature with comments');
+
+        $this->assertFalse($state->hasScrapingUrls());
+        $this->assertFalse($state->hasScrapingEndpoint());
+        $this->assertFalse($state->isWebScrapingDisabled());
+        $this->assertFalse($state->shouldRunWebScraper());
+    }
 }

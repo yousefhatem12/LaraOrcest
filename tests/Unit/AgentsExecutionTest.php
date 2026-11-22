@@ -15,6 +15,7 @@ use Yousef\LaraOrcest\Agents\GitAgent;
 use Yousef\LaraOrcest\Agents\ProductManagerAgent;
 use Yousef\LaraOrcest\Agents\QaAgent;
 use Yousef\LaraOrcest\Agents\ReviewerAgent;
+use Yousef\LaraOrcest\Agents\SwaggerAgent;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\LLM\Drivers\FakeDriver;
@@ -237,6 +238,19 @@ class AgentsExecutionTest extends TestCase
         $updatedFailing = $agent->execute($stateFailing, $this->tools, $this->fakeDriver);
         $this->assertFalse($updatedFailing->isReviewApproved());
         $this->assertSame('revise', $updatedFailing->getLatestReview()['decision']);
+    }
+
+    public function test_swagger_agent_execution(): void
+    {
+        $agent = new SwaggerAgent();
+        $this->assertSame('swagger_agent', $agent->getName());
+        $this->assertSame('artifacts', $agent->getStateOutputKey());
+
+        $state = RunState::initial('run_swagger', 'Create order API with swagger documentation');
+        $updated = $agent->execute($state, $this->tools, $this->fakeDriver);
+
+        $this->assertTrue($updated->hasSwaggerDocs());
+        $this->assertFileExists($this->tempDir . '/docs/swagger.json');
     }
 
     public function test_agent_fails_gracefully_when_llm_throws(): void

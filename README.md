@@ -51,6 +51,7 @@ In modern software development, writing high-quality Laravel features requires m
 | **`git_agent`** | Source Control & Release Hygiene Agent | Creates and isolates changes on a feature branch (`orcest/...`), verifies clean working trees, and manages milestone commits. | `git_command` | `git_state` |
 | **`database_agent`** | Laravel Database & Eloquent Specialist | Generates normalized migrations, factories, relationships, and Eloquent models scoped to `database/` and `app/Models/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` |
 | **`backend_agent`** | Laravel Backend & API Engineer | Implements form requests, controllers, actions, and API routes scoped to `app/`, `routes/`, and `config/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` |
+| **`swagger_agent`** | Laravel Swagger & OpenAPI Documentation Specialist | Generates comprehensive OpenAPI 3.0+ / Swagger specifications (JSON/YAML) and endpoints documentation scoped to `docs/` and `storage/api-docs/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts`, `metadata.swagger_documentation` |
 | **`qa_agent`** | Automated QA & Test Engineer | Writes comprehensive feature/unit tests in `tests/` based on acceptance criteria and executes `php artisan test`. | `file_reader`, `patch_writer`, `test_runner` | `test_results` |
 | **`fixer_agent`** | Root-Cause Bug Fixer & Debugger | Diagnoses failing tests or reviewer findings and applies targeted patches within `max_fix_attempts`. | `file_reader`, `patch_writer`, `artisan_runner`, `test_runner` | `artifacts`, `guardrails.fix_attempts` |
 | **`reviewer_agent`** | Code Quality & Security Reviewer | Audits changes against requirements, security standards, and test results, approving or requesting revisions. | `file_reader`, `git_command` | `reviews` |
@@ -120,6 +121,14 @@ Inspired by the core architectural principles of Memorilla, `LaraOrcest` provide
 - **Sanitization & SSRF Guardrails:** Automatically cleans noisy HTML (scripts, styling, SVG, comments, whitespace) and bounds payload characters. Strictly guards against SSRF, loopback, and cloud metadata targets (`169.254.169.254`).
 - **Dry-Run & Safe Dispatch:** Constructs the unified structured payload and records artifacts (`web_scraping/payload.json`). In `--dry-run` mode, skips external mutating HTTP requests while saving the preview payload; in standard runs, dispatches the payload via Laravel's `Http` client to the destination endpoint with configurable retries, redacting sensitive authorization headers in persistent state.
 
+### Swagger & OpenAPI Documentation (`SwaggerAgent`)
+`LaraOrcest` includes an automated API documentation specialist (`swagger_agent`) that executes within the graph after `backend_agent`:
+- **Comprehensive OpenAPI 3.0+ Generation:** Inspects the technical architecture plan, backend controllers, form requests, Eloquent models, and registered routes to produce full-featured OpenAPI 3.0+ specifications (in JSON and/or YAML).
+- **Rich Endpoint Schemas:** Accurately documents route paths, HTTP verbs (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`), path/query parameters, JSON request body schemas, validation rules, and standard HTTP response status codes (`200`, `201`, `400`, `401`, `403`, `404`, `422`, `500`).
+- **Flexible File Output:** Generates documentation directly at `docs/swagger.json`, `docs/swagger.yaml`, `storage/api-docs/api-docs.json` (L5-Swagger compliant), or custom paths configured via `config('lara-orcest.swagger.output_path')`.
+- **Intelligent Intent & CLI Controls:** Automatically activates when Swagger/OpenAPI is requested in the user prompt (e.g. *"make swagger documentation for backend"*), when passed explicitly via `--swagger` in Artisan (`php artisan orcest:build --swagger`), or when `config('lara-orcest.swagger.auto_generate')` is enabled. Can be cleanly bypassed per-run via `--no-swagger`.
+- **Standalone Pipeline:** Provides `DefaultGraphBuilder::buildSwaggerPipeline()` for dedicated, lightweight API documentation runs (`backend_agent -> swagger_agent -> completed`).
+
 ---
 
 ## Installation & Setup
@@ -186,6 +195,7 @@ LARA_ORCEST_LLM_RETRIES=2
 LARA_ORCEST_MODEL_ARCHITECT=claude-3-5-sonnet
 LARA_ORCEST_MODEL_REVIEWER_AGENT=o3-mini
 LARA_ORCEST_MODEL_BACKEND_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_SWAGGER_AGENT=gpt-4o-mini
 LARA_ORCEST_MODEL_DATABASE_AGENT=gpt-4o-mini
 LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT=gpt-4o-mini
 ```

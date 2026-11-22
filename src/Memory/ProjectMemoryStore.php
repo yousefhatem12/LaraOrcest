@@ -642,6 +642,7 @@ class ProjectMemoryStore implements ProjectMemoryContract
             'architect' => ['general', 'architecture', 'database', 'backend'],
             'database_agent' => ['general', 'database'],
             'backend_agent' => ['general', 'backend', 'architecture'],
+            'swagger_agent' => ['general', 'backend', 'documentation', 'architecture'],
             'qa_agent' => ['general', 'testing'],
             'fixer_agent' => ['general', 'testing', 'backend'],
             'reviewer_agent' => ['general', 'backend', 'database', 'testing', 'architecture'],
@@ -786,7 +787,7 @@ class ProjectMemoryStore implements ProjectMemoryContract
 
         // Controllers
         $controllers = (array) ($index['controllers'] ?? []);
-        if (! empty($controllers) && in_array($agentKey, ['architect', 'backend_agent', 'reviewer_agent'], true)) {
+        if (! empty($controllers) && in_array($agentKey, ['architect', 'backend_agent', 'reviewer_agent', 'swagger_agent'], true)) {
             $matchedControllers = [];
             foreach ($controllers as $name => $path) {
                 $matchedControllers[] = "{$name} ({$path})";
@@ -798,7 +799,7 @@ class ProjectMemoryStore implements ProjectMemoryContract
 
         // Routes
         $routes = (array) ($index['routes'] ?? []);
-        if (! empty($routes) && in_array($agentKey, ['architect', 'backend_agent', 'qa_agent'], true)) {
+        if (! empty($routes) && in_array($agentKey, ['architect', 'backend_agent', 'qa_agent', 'swagger_agent'], true)) {
             $lines[] = '- Routes: ' . implode(', ', array_slice($routes, 0, 4));
         }
 

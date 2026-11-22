@@ -41,10 +41,23 @@ class DatabaseAgent extends AbstractAgent
 
     protected function buildUserPrompt(RunState $state): string
     {
-        $planJson = json_encode($state->technicalPlan, JSON_PRETTY_PRINT);
-        $specJson = json_encode($state->requirementsSpec, JSON_PRETTY_PRINT);
+        $planJson = json_encode($state->technicalPlan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $specJson = json_encode($state->requirementsSpec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
-        return "TECHNICAL PLAN:\n{$planJson}\n\nREQUIREMENTS:\n{$specJson}\n\nPlease generate the exact code for the necessary migrations, factories, and Eloquent models.";
+        $parts = [
+            "TECHNICAL PLAN:\n{$planJson}",
+            "REQUIREMENTS:\n{$specJson}",
+        ];
+
+        $scraping = $state->getScrapingResults();
+        if (! empty($scraping) && ! empty($scraping['unified_payload'])) {
+            $payloadJson = json_encode($scraping['unified_payload'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            $parts[] = "INGESTED DATA STRUCTURE / PAYLOAD (from Web Scraping Agent):\n{$payloadJson}";
+        }
+
+        $parts[] = "Please generate the exact code for the necessary migrations, factories, and Eloquent models.";
+
+        return implode("\n\n", $parts);
     }
 
     protected function getOutputSchema(): array

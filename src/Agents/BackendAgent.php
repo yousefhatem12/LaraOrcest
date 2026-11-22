@@ -41,10 +41,28 @@ class BackendAgent extends AbstractAgent
 
     protected function buildUserPrompt(RunState $state): string
     {
-        $planJson = json_encode($state->technicalPlan, JSON_PRETTY_PRINT);
-        $backlogJson = json_encode($state->backlog, JSON_PRETTY_PRINT);
+        $planJson = json_encode($state->technicalPlan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $backlogJson = json_encode($state->backlog, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
-        return "TECHNICAL PLAN:\n{$planJson}\n\nBACKLOG:\n{$backlogJson}\n\nPlease generate the exact code for the necessary controllers, form requests, actions, and route registrations.";
+        $parts = [
+            "TECHNICAL PLAN:\n{$planJson}",
+            "BACKLOG:\n{$backlogJson}",
+        ];
+
+        $scraping = $state->getScrapingResults();
+        if (! empty($scraping)) {
+            $contractJson = json_encode([
+                'target_endpoint' => $scraping['target_endpoint'] ?? null,
+                'http_method' => $scraping['http_method'] ?? 'POST',
+                'headers' => $scraping['headers_used'] ?? [],
+                'unified_payload' => $scraping['unified_payload'] ?? [],
+            ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            $parts[] = "DESTINATION ENDPOINT CONTRACT & DATA PAYLOAD (from Web Scraping Agent):\n{$contractJson}";
+        }
+
+        $parts[] = "Please generate the exact code for the necessary controllers, form requests, actions, and route registrations.";
+
+        return implode("\n\n", $parts);
     }
 
     protected function getOutputSchema(): array

@@ -192,21 +192,7 @@ class WebScrapingAgent extends AbstractAgent
         $meta = (array) ($state->metadata['web_scraping'] ?? []);
 
         // 1. Resolve source URLs
-        $sourceUrls = [];
-        if (! empty($meta['source_urls'])) {
-            $sourceUrls = (array) $meta['source_urls'];
-        } elseif (! empty($state->metadata['source_urls'])) {
-            $sourceUrls = (array) $state->metadata['source_urls'];
-        } elseif (! empty($state->metadata['urls'])) {
-            $sourceUrls = (array) $state->metadata['urls'];
-        } else {
-            // Attempt extracting URLs from prompt
-            preg_match_all('/https?:\/\/[^\s\'"<>\)]+/i', $state->prompt, $matches);
-            $found = $matches[0] ?? [];
-            if (count($found) >= 2) {
-                $sourceUrls = array_slice($found, 0, 2);
-            }
-        }
+        $sourceUrls = $state->resolveScrapingUrls();
 
         // Validate exactly two source URLs
         $count = count($sourceUrls);
@@ -220,23 +206,7 @@ class WebScrapingAgent extends AbstractAgent
         ];
 
         // 2. Resolve destination endpoint
-        $targetEndpoint = null;
-        if (! empty($meta['target_endpoint'])) {
-            $targetEndpoint = (string) $meta['target_endpoint'];
-        } elseif (! empty($state->metadata['target_endpoint'])) {
-            $targetEndpoint = (string) $state->metadata['target_endpoint'];
-        } elseif (! empty($state->metadata['endpoint_url'])) {
-            $targetEndpoint = (string) $state->metadata['endpoint_url'];
-        } else {
-            // Check if 3rd URL in prompt was provided as endpoint
-            preg_match_all('/https?:\/\/[^\s\'"<>\)]+/i', $state->prompt, $matches);
-            $found = $matches[0] ?? [];
-            if (count($found) >= 3) {
-                $targetEndpoint = $found[2];
-            } else {
-                $targetEndpoint = (string) Config::get('lara-orcest.web_scraping.default_endpoint');
-            }
-        }
+        $targetEndpoint = $state->resolveScrapingEndpoint();
 
         if (empty($targetEndpoint) || trim($targetEndpoint) === '') {
             throw new InvalidArgumentException('WebScrapingAgent requires a target destination endpoint URL.');

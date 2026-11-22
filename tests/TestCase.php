@@ -30,5 +30,9 @@ abstract class TestCase extends OrchestraTestCase
         $app['config']->set('lara-orcest.llm.default', 'fake');
         $app['config']->set('lara-orcest.checkpointer.driver', 'json');
         $app['config']->set('lara-orcest.checkpointer.json_path', sys_get_temp_dir() . '/lara-orcest-tests');
+        $app['config']->set('view.paths', array_merge(
+            (array) $app['config']->get('view.paths', []),
+            [realpath(__DIR__ . '/../resources/views')]
+        ));
     }
 }

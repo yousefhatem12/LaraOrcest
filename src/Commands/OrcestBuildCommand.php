@@ -20,6 +20,9 @@ class OrcestBuildCommand extends Command
                             {--reject : Reject a paused run when resuming}
                             {--note= : Human review or approval notes}
                             {--no-memory : Bypass project memory recall and consolidation}
+                            {--no-scrape : Bypass web scraping agent even if URLs are present}
+                            {--swagger : Generate Swagger / OpenAPI documentation for backend APIs}
+                            {--no-swagger : Bypass Swagger / OpenAPI documentation generation}
                             {--dry-run : Preview changes and plans without writing to disk or Git}
                             {--max-fix-attempts= : Maximum bug-fix loop retries}
                             {--max-steps= : Maximum graph execution steps}
@@ -72,6 +75,21 @@ class OrcestBuildCommand extends Command
         if ($this->option('no-memory')) {
             $options['no_memory'] = true;
             $options['memory_enabled'] = false;
+        }
+
+        if ($this->option('no-scrape')) {
+            $options['no_scrape'] = true;
+            $options['web_scraping'] = ['enabled' => false];
+        }
+
+        if ($this->option('swagger')) {
+            $options['swagger'] = true;
+            $options['with_swagger'] = true;
+        }
+
+        if ($this->option('no-swagger')) {
+            $options['no_swagger'] = true;
+            $options['swagger'] = ['enabled' => false];
         }
 
         $options['on_step'] = function (RunState $state, string $node, string $message) {

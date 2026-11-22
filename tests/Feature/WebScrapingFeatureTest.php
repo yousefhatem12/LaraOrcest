@@ -177,4 +177,209 @@ class WebScrapingFeatureTest extends TestCase
         $this->assertNotEmpty($artifacts);
         $this->assertEquals('dispatch_failed', $artifacts[0]['action']);
     }
+
+    public function test_standard_workflow_bypasses_web_scraping_agent_cleanly(): void
+    {
+        config(['lara-orcest.web_scraping.default_endpoint' => null]);
+
+        $visitedNodes = [];
+        $state = Orcest::run('Implement a multi-tenant subscription billing model', [
+            'dry_run' => true,
+            'on_step' => function (RunState $s, string $node) use (&$visitedNodes) {
+                $visitedNodes[] = $node;
+            },
+        ]);
+
+        $this->assertContains('business_analyst', $visitedNodes);
+        $this->assertContains('product_manager', $visitedNodes);
+        $this->assertContains('architect', $visitedNodes);
+        $this->assertNotContains('web_scraping_agent', $visitedNodes, 'Standard run must cleanly bypass web_scraping_agent without overhead');
+        $this->assertTrue($state->isCompleted());
+        $this->assertEmpty($state->getScrapingResults());
+    }
+
+    public function test_workflow_bypasses_scraper_when_urls_present_but_endpoint_missing(): void
+    {
+        config(['lara-orcest.web_scraping.default_endpoint' => null]);
+
+        $visitedNodes = [];
+        $state = Orcest::run('Compare documentation at https://laravel.com/docs and https://vuejs.org/guide', [
+            'dry_run' => true,
+            'on_step' => function (RunState $s, string $node) use (&$visitedNodes) {
+                $visitedNodes[] = $node;
+            },
+        ]);
+
+        $this->assertContains('product_manager', $visitedNodes);
+        $this->assertContains('architect', $visitedNodes);
+        $this->assertNotContains('web_scraping_agent', $visitedNodes, 'Must bypass web_scraping_agent when no destination endpoint is provided');
+        $this->assertTrue($state->isCompleted());
+    }
+
+    public function test_workflow_bypasses_scraper_when_explicitly_disabled_via_option(): void
+    {
+        $visitedNodes = [];
+        $state = Orcest::run('Scrape https://site1.com and https://site2.com and post to https://api.example.com/dest', [
+            'dry_run' => true,
+            'no_scrape' => true,
+            'on_step' => function (RunState $s, string $node) use (&$visitedNodes) {
+                $visitedNodes[] = $node;
+            },
+        ]);
+
+        $this->assertContains('product_manager', $visitedNodes);
+        $this->assertContains('architect', $visitedNodes);
+        $this->assertNotContains('web_scraping_agent', $visitedNodes, 'Must bypass web_scraping_agent when explicitly disabled');
+        $this->assertTrue($state->isCompleted());
+    }
+
+    public function test_workflow_executes_scraper_after_pm_and_before_architect_with_data_in_runstate(): void
+    {
+        Http::fake([
+            'https://vendor-one.com*' => Http::response('<html><body><h1>Vendor One Products</h1><p>Widget A: $10</p></body></html>', 200),
+            'https://vendor-two.com*' => Http::response('<html><body><h1>Vendor Two Products</h1><p>Widget B: $20</p></body></html>', 200),
+            'https://api.aggregator.com/feed*' => Http::response(['status' => 'ingested'], 201),
+        ]);
+
+        $stepOrder = [];
+        $state = Orcest::run('Scrape https://vendor-one.com and https://vendor-two.com and post to https://api.aggregator.com/feed', [
+            'dry_run' => true,
+            'on_step' => function (RunState $s, string $node) use (&$stepOrder) {
+                $stepOrder[] = $node;
+            },
+        ]);
+
+        $this->assertTrue($state->isCompleted());
+
+        // Verify ordering: business_analyst -> product_manager -> web_scraping_agent -> architect
+        $pmIndex = array_search('product_manager', $stepOrder, true);
+        $scraperIndex = array_search('web_scraping_agent', $stepOrder, true);
+        $architectIndex = array_search('architect', $stepOrder, true);
+
+        $this->assertNotFalse($pmIndex, 'product_manager must execute');
+        $this->assertNotFalse($scraperIndex, 'web_scraping_agent must execute');
+        $this->assertNotFalse($architectIndex, 'architect must execute');
+
+        $this->assertGreaterThan($pmIndex, $scraperIndex, 'web_scraping_agent must run after product_manager');
+        $this->assertGreaterThan($scraperIndex, $architectIndex, 'architect must run after web_scraping_agent');
+
+        // Verify scraped schema/data and endpoint contract are recorded in RunState
+        $scraping = $state->getScrapingResults();
+        $this->assertNotEmpty($scraping);
+        $this->assertEquals('https://api.aggregator.com/feed', $scraping['target_endpoint']);
+        $this->assertEquals(['https://vendor-one.com', 'https://vendor-two.com'], $scraping['source_urls']);
+        $this->assertEquals('skipped_dry_run', $scraping['dispatch']['status']);
+    }
+
+    public function test_workflow_activates_scraper_when_requirements_spec_dynamically_provides_urls_and_endpoint(): void
+    {
+        Http::fake([
+            'https://devices-a.com*' => Http::response('Device A data', 200),
+            'https://devices-b.com*' => Http::response('Device B data', 200),
+        ]);
+
+        $fakeLlm = new FakeDriver();
+        $fakeLlm->setCannedResponse('structured', [
+            'domain_entities' => ['ScrapedDevice'],
+            'functional_requirements' => ['Extract device catalog'],
+            'business_rules' => ['Price in USD'],
+            'source_urls' => ['https://devices-a.com/catalog', 'https://devices-b.com/catalog'],
+            'target_endpoint' => 'https://api.inventory.test/devices',
+            'tasks' => [
+                [
+                    'id' => 'TASK-1',
+                    'title' => 'Process scraped devices',
+                    'priority' => 1,
+                    'acceptance_criteria' => ['Device model and price'],
+                ],
+            ],
+            'extraction_summary' => 'Scraped devices from A and B',
+            'site_1_data' => ['model' => 'Dev-1', 'price' => 100],
+            'site_2_data' => ['model' => 'Dev-2', 'price' => 200],
+            'unified_payload' => [
+                'devices' => [
+                    ['model' => 'Dev-1', 'price' => 100],
+                    ['model' => 'Dev-2', 'price' => 200],
+                ],
+            ],
+            'migrations' => ['create_devices_table' => 'database/migrations/2026_01_01_create_devices_table.php'],
+            'models' => ['Device' => 'app/Models/Device.php'],
+            'controllers' => ['DeviceController' => 'app/Http/Controllers/DeviceController.php'],
+            'execution_steps' => ['Step 1: Migrate'],
+            'decision' => 'approved',
+            'findings' => ['Approved'],
+        ]);
+
+        $visited = [];
+        $engine = DefaultGraphBuilder::build($fakeLlm, withScraper: true);
+        $engine->onStep(function (RunState $s, string $node) use (&$visited) {
+            $visited[] = $node;
+        });
+
+        // Prompt has NO URLs initially
+        $state = RunState::create('Ingest devices from suppliers', [
+            'dry_run' => true,
+        ]);
+
+        $finalState = $engine->run($state);
+
+        $this->assertTrue($finalState->isCompleted());
+        $this->assertContains('business_analyst', $visited);
+        $this->assertContains('product_manager', $visited);
+        $this->assertContains('web_scraping_agent', $visited, 'web_scraping_agent should activate when BA spec introduces scraping URLs and endpoint');
+        $this->assertContains('architect', $visited);
+
+        $scraping = $finalState->getScrapingResults();
+        $this->assertNotEmpty($scraping);
+        $this->assertEquals('https://api.inventory.test/devices', $scraping['target_endpoint']);
+        $this->assertEquals(['https://devices-a.com/catalog', 'https://devices-b.com/catalog'], $scraping['source_urls']);
+    }
+
+    public function test_architect_and_downstream_agents_receive_scraped_data_and_endpoint_contract(): void
+    {
+        $state = RunState::create('Feature with scraping', ['dry_run' => true])
+            ->withScrapingResults([
+                'source_urls' => ['https://src1.com', 'https://src2.com'],
+                'target_endpoint' => 'https://api.warehouse.internal/items',
+                'http_method' => 'POST',
+                'extraction_summary' => 'Extracted 5 warehouse items',
+                'unified_payload' => [
+                    'sku' => 'ITEM-99',
+                    'price' => 49.99,
+                    'stock' => 150,
+                ],
+                'headers_used' => ['X-Api-Key' => '[REDACTED]'],
+            ])
+            ->withRequirementsSpec(['domain_entities' => ['Item']])
+            ->withBacklog([['id' => 'TASK-1', 'title' => 'Ingest items']]);
+
+        // ArchitectAgent prompt inspection
+        $architectAgent = new \Yousef\LaraOrcest\Agents\ArchitectAgent();
+        $ref = new \ReflectionMethod($architectAgent, 'buildUserPrompt');
+        $ref->setAccessible(true);
+        $architectPrompt = $ref->invoke($architectAgent, $state);
+
+        $this->assertStringContainsString('SCRAPED DATA & DESTINATION CONTRACT (from Web Scraping Agent):', $architectPrompt);
+        $this->assertStringContainsString('https://api.warehouse.internal/items', $architectPrompt);
+        $this->assertStringContainsString('https://src1.com', $architectPrompt);
+        $this->assertStringContainsString('ITEM-99', $architectPrompt);
+
+        // BackendAgent prompt inspection
+        $backendAgent = new \Yousef\LaraOrcest\Agents\BackendAgent();
+        $refBackend = new \ReflectionMethod($backendAgent, 'buildUserPrompt');
+        $refBackend->setAccessible(true);
+        $backendPrompt = $refBackend->invoke($backendAgent, $state);
+
+        $this->assertStringContainsString('DESTINATION ENDPOINT CONTRACT & DATA PAYLOAD (from Web Scraping Agent):', $backendPrompt);
+        $this->assertStringContainsString('https://api.warehouse.internal/items', $backendPrompt);
+
+        // DatabaseAgent prompt inspection
+        $databaseAgent = new \Yousef\LaraOrcest\Agents\DatabaseAgent();
+        $refDb = new \ReflectionMethod($databaseAgent, 'buildUserPrompt');
+        $refDb->setAccessible(true);
+        $dbPrompt = $refDb->invoke($databaseAgent, $state);
+
+        $this->assertStringContainsString('INGESTED DATA STRUCTURE / PAYLOAD (from Web Scraping Agent):', $dbPrompt);
+        $this->assertStringContainsString('ITEM-99', $dbPrompt);
+    }
 }

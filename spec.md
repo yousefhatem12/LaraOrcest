@@ -162,6 +162,9 @@ database_agent
   v
 backend_agent
   |
+  v (when Swagger requested or enabled)
+swagger_agent
+  |
   v
 qa_agent <---------------------+
   |                            |

@@ -13,6 +13,7 @@ use Yousef\LaraOrcest\Agents\GitAgent;
 use Yousef\LaraOrcest\Agents\ProductManagerAgent;
 use Yousef\LaraOrcest\Agents\QaAgent;
 use Yousef\LaraOrcest\Agents\ReviewerAgent;
+use Yousef\LaraOrcest\Agents\SwaggerAgent;
 use Yousef\LaraOrcest\Agents\WebScrapingAgent;
 use Yousef\LaraOrcest\Contracts\CheckpointerContract;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
@@ -34,7 +35,8 @@ class DefaultGraphBuilder
         LlmDriverContract $llm,
         ?CheckpointerContract $checkpointer = null,
         ?array $tools = null,
-        bool $withScraper = false
+        bool $withScraper = false,
+        bool $withSwagger = false
     ): GraphEngine {
         $engine = new GraphEngine($checkpointer);
 
@@ -57,6 +59,10 @@ class DefaultGraphBuilder
             $agents[] = new WebScrapingAgent();
         }
 
+        if ($withSwagger) {
+            $agents[] = new SwaggerAgent();
+        }
+
         // 2. Register agent nodes
         foreach ($agents as $agent) {
             $engine->addNode(new AgentGraphNode($agent, $tools, $llm, $checkpointer));
@@ -66,9 +72,9 @@ class DefaultGraphBuilder
         $engine->addEdge('business_analyst', 'product_manager');
 
         if ($withScraper) {
-            // From product_manager: route to web_scraping_agent if scraping target URLs present, else to architect
-            $engine->addEdge('product_manager', 'web_scraping_agent', fn (RunState $s) => $s->hasScrapingUrls(), 20);
-            $engine->addEdge('product_manager', 'architect', fn (RunState $s) => ! $s->hasScrapingUrls(), 10);
+            // From product_manager: route to web_scraping_agent if scraping target URLs and endpoint are requested, else to architect
+            $engine->addEdge('product_manager', 'web_scraping_agent', fn (RunState $s) => $s->shouldRunWebScraper(), 20);
+            $engine->addEdge('product_manager', 'architect', fn (RunState $s) => ! $s->shouldRunWebScraper(), 10);
 
             // From web_scraping_agent: complete if configured, otherwise proceed to architect
             $engine->addEdge('web_scraping_agent', GraphEngine::TERMINAL_COMPLETED, fn (RunState $s) => $s->shouldStopAfterScraping(), 20);
@@ -80,7 +86,14 @@ class DefaultGraphBuilder
         $engine->addEdge('architect', 'git_agent');
         $engine->addEdge('git_agent', 'database_agent');
         $engine->addEdge('database_agent', 'backend_agent');
-        $engine->addEdge('backend_agent', 'qa_agent');
+
+        if ($withSwagger) {
+            $engine->addEdge('backend_agent', 'swagger_agent', fn (RunState $s) => $s->shouldRunSwagger(), 20);
+            $engine->addEdge('backend_agent', 'qa_agent', fn (RunState $s) => ! $s->shouldRunSwagger(), 10);
+            $engine->addEdge('swagger_agent', 'qa_agent');
+        } else {
+            $engine->addEdge('backend_agent', 'qa_agent');
+        }
 
         // 4. Conditional transitions from qa_agent
         // If tests pass -> reviewer_agent
@@ -131,6 +144,35 @@ class DefaultGraphBuilder
         $engine->addEdge('business_analyst', 'product_manager');
         $engine->addEdge('product_manager', 'web_scraping_agent');
         $engine->addEdge('web_scraping_agent', GraphEngine::TERMINAL_COMPLETED);
+
+        return $engine;
+    }
+
+    /**
+     * Builds a dedicated standalone Swagger/OpenAPI documentation pipeline:
+     * backend_agent -> swagger_agent -> TERMINAL_COMPLETED
+     *
+     * @param  array<string, ToolContract>|null  $tools
+     */
+    public static function buildSwaggerPipeline(
+        LlmDriverContract $llm,
+        ?CheckpointerContract $checkpointer = null,
+        ?array $tools = null
+    ): GraphEngine {
+        $engine = new GraphEngine($checkpointer);
+        $tools = $tools ?: self::defaultTools();
+
+        $agents = [
+            new BackendAgent(),
+            new SwaggerAgent(),
+        ];
+
+        foreach ($agents as $agent) {
+            $engine->addNode(new AgentGraphNode($agent, $tools, $llm, $checkpointer));
+        }
+
+        $engine->addEdge('backend_agent', 'swagger_agent');
+        $engine->addEdge('swagger_agent', GraphEngine::TERMINAL_COMPLETED);
 
         return $engine;
     }

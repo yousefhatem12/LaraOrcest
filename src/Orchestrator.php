@@ -46,7 +46,8 @@ class Orchestrator
         $graph = DefaultGraphBuilder::build(
             llm: $llmDriver,
             checkpointer: $this->checkpointer,
-            withScraper: $state->hasScrapingUrls()
+            withScraper: ! $state->isWebScrapingDisabled(),
+            withSwagger: ! $state->isSwaggerDisabled()
         );
 
         if (isset($options['on_step']) && is_callable($options['on_step'])) {
@@ -103,7 +104,8 @@ class Orchestrator
         $graph = DefaultGraphBuilder::build(
             llm: $llmDriver,
             checkpointer: $this->checkpointer,
-            withScraper: $state->hasScrapingUrls()
+            withScraper: ! $state->isWebScrapingDisabled(),
+            withSwagger: ! $state->isSwaggerDisabled()
         );
 
         if (isset($options['on_step']) && is_callable($options['on_step'])) {

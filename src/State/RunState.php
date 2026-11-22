@@ -83,8 +83,27 @@ class RunState
         $memoryConfig = (bool) Config::get('lara-orcest.memory.enabled', true);
         $memoryEnabled = ! $noMemory && (bool) ($options['memory_enabled'] ?? $memoryConfig);
 
+        $noScrape = (bool) (
+            $options['no_scrape']
+            ?? $options['skip_scrape']
+            ?? $options['no_web_scraping']
+            ?? $options['skip_web_scraping']
+            ?? $options['disable_web_scraping']
+            ?? false
+        );
+        $scrapingConfigEnabled = (bool) Config::get('lara-orcest.web_scraping.enabled', true);
+        $scrapingEnabled = ! $noScrape
+            && (isset($options['web_scraping']['enabled']) ? (bool) $options['web_scraping']['enabled'] : true)
+            && (isset($options['scraping_enabled']) ? (bool) $options['scraping_enabled'] : true)
+            && $scrapingConfigEnabled;
+
         $scrapingResults = (array) ($options['scraping_results'] ?? []);
         $webScrapingMeta = (array) ($options['web_scraping'] ?? []);
+        $webScrapingMeta['enabled'] = $scrapingEnabled;
+        if ($noScrape) {
+            $webScrapingMeta['disabled'] = true;
+        }
+
         if (isset($options['source_urls'])) {
             $webScrapingMeta['source_urls'] = (array) $options['source_urls'];
         }
@@ -96,6 +115,43 @@ class RunState
         }
         if (isset($options['endpoint_url'])) {
             $webScrapingMeta['target_endpoint'] = (string) $options['endpoint_url'];
+        }
+        if (isset($options['endpoint'])) {
+            $webScrapingMeta['target_endpoint'] = (string) $options['endpoint'];
+        }
+        if (isset($options['stop_after_scraping'])) {
+            $webScrapingMeta['stop_after'] = (bool) $options['stop_after_scraping'];
+        }
+
+        $noSwagger = (bool) (
+            $options['no_swagger']
+            ?? $options['skip_swagger']
+            ?? $options['disable_swagger']
+            ?? false
+        );
+        $swaggerConfigEnabled = (bool) Config::get('lara-orcest.swagger.enabled', true);
+        $swaggerExplicit = (bool) (
+            $options['swagger']
+            ?? $options['with_swagger']
+            ?? false
+        );
+        $swaggerEnabled = ! $noSwagger
+            && (isset($options['swagger']['enabled']) ? (bool) $options['swagger']['enabled'] : true)
+            && $swaggerConfigEnabled;
+
+        $swaggerMeta = (array) ($options['swagger'] ?? []);
+        $swaggerMeta['enabled'] = $swaggerEnabled;
+        if ($swaggerExplicit) {
+            $swaggerMeta['explicit'] = true;
+        }
+        if ($noSwagger) {
+            $swaggerMeta['disabled'] = true;
+        }
+        if (isset($options['swagger_format'])) {
+            $swaggerMeta['format'] = (string) $options['swagger_format'];
+        }
+        if (isset($options['swagger_path'])) {
+            $swaggerMeta['path'] = (string) $options['swagger_path'];
         }
 
         return new self(
@@ -122,6 +178,7 @@ class RunState
                 'schema_version' => self::SCHEMA_VERSION,
                 'memory_enabled' => $memoryEnabled,
                 'web_scraping' => $webScrapingMeta,
+                'swagger' => $swaggerMeta,
                 'human_in_the_loop' => [
                     'enabled' => $hitlEnabled,
                     'skip_review' => $skipReview,
@@ -893,31 +950,658 @@ class RunState
      */
     public function getScrapingResults(): array
     {
-        return ! empty($this->scrapingResults) ? $this->scrapingResults : (array) ($this->metadata['web_scraping'] ?? []);
+        if (! empty($this->scrapingResults)) {
+            return $this->scrapingResults;
+        }
+
+        $meta = (array) ($this->metadata['web_scraping'] ?? []);
+        if (isset($meta['extraction_summary']) || isset($meta['dispatch']) || isset($meta['unified_payload'])) {
+            return $meta;
+        }
+
+        return [];
     }
 
     /**
-     * Checks if scraping target URLs are provided in metadata, options, or prompt.
+     * Checks if web scraping is explicitly disabled in state, options, or configuration.
+     */
+    public function isWebScrapingDisabled(): bool
+    {
+        if (Config::get('lara-orcest.web_scraping.enabled') === false) {
+            return true;
+        }
+
+        $meta = (array) ($this->metadata['web_scraping'] ?? []);
+        if (isset($meta['enabled']) && $meta['enabled'] === false) {
+            return true;
+        }
+        if (! empty($meta['disabled'])) {
+            return true;
+        }
+
+        if (! empty($this->metadata['disable_web_scraping'])
+            || ! empty($this->metadata['no_web_scraping'])
+            || ! empty($this->metadata['no_scrape'])
+            || ! empty($this->metadata['skip_scrape'])
+            || ! empty($this->metadata['skip_web_scraping'])) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Resolves target source website URLs (expecting two target URLs).
+     * Searches in RunState metadata, requirements_spec, backlog, prompt, and configuration.
+     *
+     * @return array<int, string>
+     */
+    public function resolveScrapingUrls(): array
+    {
+        $meta = (array) ($this->metadata['web_scraping'] ?? []);
+
+        // 1. RunState metadata / options
+        $candidateUrls = null;
+        if (! empty($meta['source_urls']) && is_array($meta['source_urls'])) {
+            $candidateUrls = $meta['source_urls'];
+        } elseif (! empty($meta['urls']) && is_array($meta['urls'])) {
+            $candidateUrls = $meta['urls'];
+        } elseif (! empty($this->metadata['source_urls']) && is_array($this->metadata['source_urls'])) {
+            $candidateUrls = $this->metadata['source_urls'];
+        } elseif (! empty($this->metadata['urls']) && is_array($this->metadata['urls'])) {
+            $candidateUrls = $this->metadata['urls'];
+        } elseif (! empty($this->scrapingResults['source_urls']) && is_array($this->scrapingResults['source_urls'])) {
+            $candidateUrls = $this->scrapingResults['source_urls'];
+        }
+
+        // 2. requirements_spec
+        if ($candidateUrls === null && ! empty($this->requirementsSpec)) {
+            $specWs = (array) ($this->requirementsSpec['web_scraping'] ?? []);
+            if (! empty($specWs['source_urls']) && is_array($specWs['source_urls'])) {
+                $candidateUrls = $specWs['source_urls'];
+            } elseif (! empty($specWs['urls']) && is_array($specWs['urls'])) {
+                $candidateUrls = $specWs['urls'];
+            } elseif (! empty($this->requirementsSpec['source_urls']) && is_array($this->requirementsSpec['source_urls'])) {
+                $candidateUrls = $this->requirementsSpec['source_urls'];
+            } elseif (! empty($this->requirementsSpec['urls']) && is_array($this->requirementsSpec['urls'])) {
+                $candidateUrls = $this->requirementsSpec['urls'];
+            } else {
+                $extracted = self::extractHttpUrlsFromValue($this->requirementsSpec);
+                if (count($extracted) >= 2) {
+                    $candidateUrls = array_slice($extracted, 0, 2);
+                }
+            }
+        }
+
+        // 3. backlog
+        if ($candidateUrls === null && ! empty($this->backlog)) {
+            foreach ($this->backlog as $task) {
+                $taskArr = is_array($task) ? $task : (method_exists($task, 'toArray') ? $task->toArray() : (array) $task);
+                if (! empty($taskArr['web_scraping']['source_urls']) && is_array($taskArr['web_scraping']['source_urls'])) {
+                    $candidateUrls = $taskArr['web_scraping']['source_urls'];
+                    break;
+                }
+                if (! empty($taskArr['source_urls']) && is_array($taskArr['source_urls'])) {
+                    $candidateUrls = $taskArr['source_urls'];
+                    break;
+                }
+                if (! empty($taskArr['urls']) && is_array($taskArr['urls'])) {
+                    $candidateUrls = $taskArr['urls'];
+                    break;
+                }
+            }
+
+            if ($candidateUrls === null) {
+                $extracted = self::extractHttpUrlsFromValue($this->backlog);
+                if (count($extracted) >= 2) {
+                    $candidateUrls = array_slice($extracted, 0, 2);
+                }
+            }
+        }
+
+        // 4. prompt
+        if ($candidateUrls === null && $this->prompt !== '') {
+            $extracted = self::extractHttpUrlsFromValue($this->prompt);
+            if (count($extracted) >= 2) {
+                $candidateUrls = array_slice($extracted, 0, 2);
+            } elseif (count($extracted) === 1) {
+                $candidateUrls = $extracted;
+            }
+        }
+
+        // 5. configuration
+        if ($candidateUrls === null) {
+            $cfgUrls = Config::get('lara-orcest.web_scraping.source_urls')
+                ?? Config::get('lara-orcest.web_scraping.urls');
+            if (! empty($cfgUrls) && is_array($cfgUrls)) {
+                $candidateUrls = $cfgUrls;
+            }
+        }
+
+        if ($candidateUrls === null) {
+            return [];
+        }
+
+        $validated = [];
+        foreach ($candidateUrls as $url) {
+            if (is_string($url) && trim($url) !== '') {
+                $trimmed = trim($url);
+                if (filter_var($trimmed, FILTER_VALIDATE_URL) !== false) {
+                    $validated[] = $trimmed;
+                }
+            }
+        }
+
+        if (count($validated) >= 2) {
+            return array_slice($validated, 0, 2);
+        }
+
+        return $validated;
+    }
+
+    /**
+     * Resolves the target destination endpoint URL.
+     * Searches in RunState metadata, requirements_spec, backlog, prompt, and configuration.
+     */
+    public function resolveScrapingEndpoint(): ?string
+    {
+        $meta = (array) ($this->metadata['web_scraping'] ?? []);
+
+        // 1. RunState metadata / options
+        $endpoint = null;
+        if (! empty($meta['target_endpoint'])) {
+            $endpoint = (string) $meta['target_endpoint'];
+        } elseif (! empty($meta['endpoint_url'])) {
+            $endpoint = (string) $meta['endpoint_url'];
+        } elseif (! empty($meta['endpoint'])) {
+            $endpoint = (string) $meta['endpoint'];
+        } elseif (! empty($this->metadata['target_endpoint'])) {
+            $endpoint = (string) $this->metadata['target_endpoint'];
+        } elseif (! empty($this->metadata['endpoint_url'])) {
+            $endpoint = (string) $this->metadata['endpoint_url'];
+        } elseif (! empty($this->metadata['endpoint'])) {
+            $endpoint = (string) $this->metadata['endpoint'];
+        } elseif (! empty($this->scrapingResults['target_endpoint'])) {
+            $endpoint = (string) $this->scrapingResults['target_endpoint'];
+        } elseif (! empty($this->scrapingResults['endpoint_url'])) {
+            $endpoint = (string) $this->scrapingResults['endpoint_url'];
+        }
+
+        // 2. requirements_spec
+        if ($endpoint === null && ! empty($this->requirementsSpec)) {
+            $specWs = (array) ($this->requirementsSpec['web_scraping'] ?? []);
+            if (! empty($specWs['target_endpoint'])) {
+                $endpoint = (string) $specWs['target_endpoint'];
+            } elseif (! empty($specWs['endpoint_url'])) {
+                $endpoint = (string) $specWs['endpoint_url'];
+            } elseif (! empty($specWs['endpoint'])) {
+                $endpoint = (string) $specWs['endpoint'];
+            } elseif (! empty($this->requirementsSpec['target_endpoint'])) {
+                $endpoint = (string) $this->requirementsSpec['target_endpoint'];
+            } elseif (! empty($this->requirementsSpec['endpoint_url'])) {
+                $endpoint = (string) $this->requirementsSpec['endpoint_url'];
+            } elseif (! empty($this->requirementsSpec['endpoint'])) {
+                $endpoint = (string) $this->requirementsSpec['endpoint'];
+            } else {
+                $found = self::extractEndpointFromValue($this->requirementsSpec);
+                if ($found !== null) {
+                    $endpoint = $found;
+                } else {
+                    $extracted = self::extractHttpUrlsFromValue($this->requirementsSpec);
+                    if (count($extracted) >= 3) {
+                        $endpoint = $extracted[2];
+                    }
+                }
+            }
+        }
+
+        // 3. backlog
+        if ($endpoint === null && ! empty($this->backlog)) {
+            foreach ($this->backlog as $task) {
+                $taskArr = is_array($task) ? $task : (method_exists($task, 'toArray') ? $task->toArray() : (array) $task);
+                if (! empty($taskArr['web_scraping']['target_endpoint'])) {
+                    $endpoint = (string) $taskArr['web_scraping']['target_endpoint'];
+                    break;
+                }
+                if (! empty($taskArr['target_endpoint'])) {
+                    $endpoint = (string) $taskArr['target_endpoint'];
+                    break;
+                }
+                if (! empty($taskArr['endpoint_url'])) {
+                    $endpoint = (string) $taskArr['endpoint_url'];
+                    break;
+                }
+                if (! empty($taskArr['endpoint'])) {
+                    $endpoint = (string) $taskArr['endpoint'];
+                    break;
+                }
+            }
+
+            if ($endpoint === null) {
+                $found = self::extractEndpointFromValue($this->backlog);
+                if ($found !== null) {
+                    $endpoint = $found;
+                } else {
+                    $extracted = self::extractHttpUrlsFromValue($this->backlog);
+                    if (count($extracted) >= 3) {
+                        $endpoint = $extracted[2];
+                    }
+                }
+            }
+        }
+
+        // 4. prompt
+        if ($endpoint === null && $this->prompt !== '') {
+            $found = self::extractEndpointFromString($this->prompt);
+            if ($found !== null) {
+                $endpoint = $found;
+            } else {
+                $extracted = self::extractHttpUrlsFromValue($this->prompt);
+                if (count($extracted) >= 3) {
+                    $endpoint = $extracted[2];
+                }
+            }
+        }
+
+        // 5. configuration
+        if ($endpoint === null) {
+            $cfgEndpoint = Config::get('lara-orcest.web_scraping.target_endpoint')
+                ?? Config::get('lara-orcest.web_scraping.endpoint_url')
+                ?? Config::get('lara-orcest.web_scraping.default_endpoint')
+                ?? Config::get('lara-orcest.web_scraping.endpoint');
+
+            if (! empty($cfgEndpoint) && is_string($cfgEndpoint)) {
+                $endpoint = (string) $cfgEndpoint;
+            }
+        }
+
+        if ($endpoint !== null && trim($endpoint) !== '') {
+            $trimmed = trim($endpoint);
+            if (filter_var($trimmed, FILTER_VALIDATE_URL) !== false) {
+                return $trimmed;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Checks if scraping target URLs are provided in metadata, spec, backlog, prompt, or config.
+     * Expects exactly two target URLs.
      */
     public function hasScrapingUrls(): bool
     {
-        if (! empty($this->metadata['web_scraping']['source_urls']) || ! empty($this->metadata['source_urls']) || ! empty($this->metadata['urls'])) {
+        return count($this->resolveScrapingUrls()) === 2;
+    }
+
+    /**
+     * Checks if a destination endpoint is provided.
+     */
+    public function hasScrapingEndpoint(): bool
+    {
+        return $this->resolveScrapingEndpoint() !== null;
+    }
+
+    /**
+     * Determines whether WebScrapingAgent should activate in the graph.
+     * Requires:
+     * - Web scraping is not explicitly disabled
+     * - Two target source URLs are provided
+     * - A target destination endpoint is provided
+     */
+    public function shouldRunWebScraper(): bool
+    {
+        return ! $this->isWebScrapingDisabled()
+            && $this->hasScrapingUrls()
+            && $this->hasScrapingEndpoint();
+    }
+
+    /**
+     * Alias for shouldRunWebScraper().
+     */
+    public function shouldRunScraper(): bool
+    {
+        return $this->shouldRunWebScraper();
+    }
+
+    /**
+     * Alias for shouldRunWebScraper().
+     */
+    public function shouldActivateScraper(): bool
+    {
+        return $this->shouldRunWebScraper();
+    }
+
+    /**
+     * Configures or updates web scraping settings for this run.
+     *
+     * @param  array<int, string>|null  $sourceUrls
+     */
+    public function withWebScrapingConfig(
+        bool $enabled,
+        ?array $sourceUrls = null,
+        ?string $targetEndpoint = null,
+        ?bool $stopAfterScraping = null
+    ): self {
+        $meta = $this->metadata;
+        $ws = (array) ($meta['web_scraping'] ?? []);
+        $ws['enabled'] = $enabled;
+        if (! $enabled) {
+            $ws['disabled'] = true;
+        } else {
+            unset($ws['disabled']);
+        }
+        if ($sourceUrls !== null) {
+            $ws['source_urls'] = $sourceUrls;
+        }
+        if ($targetEndpoint !== null) {
+            $ws['target_endpoint'] = $targetEndpoint;
+        }
+        if ($stopAfterScraping !== null) {
+            $ws['stop_after'] = $stopAfterScraping;
+        }
+        $meta['web_scraping'] = $ws;
+
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            scrapingResults: $this->scrapingResults,
+            guardrails: $this->guardrails,
+            metadata: $meta
+        );
+    }
+
+    /**
+     * Records structured Swagger/OpenAPI documentation in state metadata.
+     *
+     * @param  array<string, mixed>  $docs
+     */
+    public function withSwaggerDocs(array $docs): self
+    {
+        $meta = $this->metadata;
+        $meta['swagger_documentation'] = $docs;
+        $meta['updated_at'] = date('c');
+
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            scrapingResults: $this->scrapingResults,
+            guardrails: $this->guardrails,
+            metadata: $meta
+        );
+    }
+
+    /**
+     * Retrieves the stored Swagger/OpenAPI documentation object.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getSwaggerDocs(): ?array
+    {
+        return $this->metadata['swagger_documentation'] ?? null;
+    }
+
+    /**
+     * Retrieves the raw OpenAPI specification array.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getSwaggerSpec(): ?array
+    {
+        return $this->metadata['swagger_documentation']['openapi_spec'] ?? null;
+    }
+
+    /**
+     * Checks if Swagger documentation has been produced.
+     */
+    public function hasSwaggerDocs(): bool
+    {
+        return ! empty($this->metadata['swagger_documentation']);
+    }
+
+    /**
+     * Checks if Swagger generation is disabled.
+     */
+    public function isSwaggerDisabled(): bool
+    {
+        if (Config::get('lara-orcest.swagger.enabled') === false) {
             return true;
         }
 
-        if (! empty($this->scrapingResults['source_urls'])) {
+        $meta = (array) ($this->metadata['swagger'] ?? []);
+        if (isset($meta['enabled']) && $meta['enabled'] === false) {
             return true;
         }
 
-        // Check if prompt requests web scraping and contains at least 2 HTTP/HTTPS URLs
-        if (preg_match('/scrape|crawl|fetch|extract.*website|extract.*url/i', $this->prompt)) {
-            preg_match_all('/https?:\/\/[^\s\'"<>\)]+/i', $this->prompt, $matches);
-            if (count($matches[0] ?? []) >= 2) {
+        if (! empty($meta['disabled'])) {
+            return true;
+        }
+
+        return ! empty($this->metadata['disable_swagger'])
+            || ! empty($this->metadata['no_swagger'])
+            || ! empty($this->metadata['skip_swagger']);
+    }
+
+    /**
+     * Checks if Swagger generation is enabled.
+     */
+    public function isSwaggerEnabled(): bool
+    {
+        return ! $this->isSwaggerDisabled();
+    }
+
+    /**
+     * Determines whether SwaggerAgent should run in the orchestration graph.
+     */
+    public function shouldRunSwagger(): bool
+    {
+        if ($this->isSwaggerDisabled()) {
+            return false;
+        }
+
+        $meta = (array) ($this->metadata['swagger'] ?? []);
+        if (! empty($meta['explicit']) || ! empty($meta['run'])) {
+            return true;
+        }
+
+        if (Config::get('lara-orcest.swagger.auto_generate', false)) {
+            return true;
+        }
+
+        return $this->detectSwaggerIntent();
+    }
+
+    /**
+     * Detects if the prompt or requirements indicate Swagger/OpenAPI generation intent.
+     */
+    public function detectSwaggerIntent(): bool
+    {
+        $text = strtolower($this->prompt);
+
+        $keywords = [
+            'swagger',
+            'openapi',
+            'api doc',
+            'api-doc',
+            'api docs',
+            'api documentation',
+            'document api',
+            'documentation for backend',
+            'document backend',
+            'swagger doc',
+            'openapi spec',
+            'swagger spec',
+        ];
+
+        foreach ($keywords as $kw) {
+            if (str_contains($text, $kw)) {
                 return true;
             }
         }
 
+        if (! empty($this->requirementsSpec['functional_requirements'])) {
+            foreach ((array) $this->requirementsSpec['functional_requirements'] as $req) {
+                $reqText = strtolower((string) $req);
+                foreach ($keywords as $kw) {
+                    if (str_contains($reqText, $kw)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
         return false;
+    }
+
+    /**
+     * Configures or updates Swagger settings for this run.
+     */
+    public function withSwaggerConfig(
+        bool $enabled,
+        ?string $format = null,
+        ?string $path = null,
+        ?bool $explicit = null
+    ): self {
+        $meta = $this->metadata;
+        $swaggerMeta = (array) ($meta['swagger'] ?? []);
+        $swaggerMeta['enabled'] = $enabled;
+        if (! $enabled) {
+            $swaggerMeta['disabled'] = true;
+        } else {
+            unset($swaggerMeta['disabled']);
+        }
+        if ($format !== null) {
+            $swaggerMeta['format'] = $format;
+        }
+        if ($path !== null) {
+            $swaggerMeta['path'] = $path;
+        }
+        if ($explicit !== null) {
+            $swaggerMeta['explicit'] = $explicit;
+        }
+        $meta['swagger'] = $swaggerMeta;
+        $meta['updated_at'] = date('c');
+
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            scrapingResults: $this->scrapingResults,
+            guardrails: $this->guardrails,
+            metadata: $meta
+        );
+    }
+
+    /**
+     * Recursively extracts all valid HTTP/HTTPS URLs from any data structure.
+     *
+     * @return array<int, string>
+     */
+    private static function extractHttpUrlsFromValue(mixed $value): array
+    {
+        $urls = [];
+
+        if (is_string($value)) {
+            preg_match_all('/https?:\/\/[^\s\'"<>\)]+/i', $value, $matches);
+            foreach ($matches[0] ?? [] as $url) {
+                $trimmed = rtrim($url, '.,;:');
+                if (filter_var($trimmed, FILTER_VALIDATE_URL) !== false) {
+                    $urls[] = $trimmed;
+                }
+            }
+        } elseif (is_array($value)) {
+            foreach ($value as $item) {
+                $urls = array_merge($urls, self::extractHttpUrlsFromValue($item));
+            }
+        } elseif (is_object($value)) {
+            if (method_exists($value, 'toArray')) {
+                $urls = array_merge($urls, self::extractHttpUrlsFromValue($value->toArray()));
+            } else {
+                $urls = array_merge($urls, self::extractHttpUrlsFromValue(get_object_vars($value)));
+            }
+        }
+
+        return array_values(array_unique($urls));
+    }
+
+    /**
+     * Recursively looks for an endpoint URL (either via key name or regex pattern) in a structure.
+     */
+    private static function extractEndpointFromValue(mixed $value): ?string
+    {
+        if (is_array($value)) {
+            foreach (['target_endpoint', 'endpoint_url', 'endpoint', 'destination_endpoint', 'destination'] as $key) {
+                if (! empty($value[$key]) && is_string($value[$key])) {
+                    $trimmed = trim($value[$key]);
+                    if (filter_var($trimmed, FILTER_VALIDATE_URL) !== false) {
+                        return $trimmed;
+                    }
+                }
+            }
+
+            if (! empty($value['web_scraping']) && is_array($value['web_scraping'])) {
+                $found = self::extractEndpointFromValue($value['web_scraping']);
+                if ($found !== null) {
+                    return $found;
+                }
+            }
+
+            foreach ($value as $item) {
+                if (is_string($item)) {
+                    $found = self::extractEndpointFromString($item);
+                    if ($found !== null) {
+                        return $found;
+                    }
+                } elseif (is_array($item) || is_object($item)) {
+                    $found = self::extractEndpointFromValue($item);
+                    if ($found !== null) {
+                        return $found;
+                    }
+                }
+            }
+        } elseif (is_string($value)) {
+            return self::extractEndpointFromString($value);
+        }
+
+        return null;
+    }
+
+    private static function extractEndpointFromString(string $text): ?string
+    {
+        if (preg_match('/(?:target_endpoint|endpoint_url|endpoint|destination|send to|post to)\s*[:=]?\s*(https?:\/\/[^\s\'"<>\)]+)/i', $text, $matches)) {
+            $trimmed = rtrim($matches[1], '.,;:');
+            if (filter_var($trimmed, FILTER_VALIDATE_URL) !== false) {
+                return $trimmed;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -40,10 +40,31 @@ class ArchitectAgent extends AbstractAgent
 
     protected function buildUserPrompt(RunState $state): string
     {
-        $backlogJson = json_encode($state->backlog, JSON_PRETTY_PRINT);
-        $specJson = json_encode($state->requirementsSpec, JSON_PRETTY_PRINT);
+        $backlogJson = json_encode($state->backlog, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $specJson = json_encode($state->requirementsSpec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
-        return "REQUIREMENTS SPEC:\n{$specJson}\n\nBACKLOG:\n{$backlogJson}\n\nDesign the Laravel technical implementation plan specifying file paths for migrations, models, controllers, requests, routes, and tests.";
+        $parts = [
+            "REQUIREMENTS SPEC:\n{$specJson}",
+            "BACKLOG:\n{$backlogJson}",
+        ];
+
+        $scraping = $state->getScrapingResults();
+        if (! empty($scraping)) {
+            $contractData = [
+                'source_urls' => $scraping['source_urls'] ?? [],
+                'target_endpoint' => $scraping['target_endpoint'] ?? null,
+                'http_method' => $scraping['http_method'] ?? 'POST',
+                'extraction_summary' => $scraping['extraction_summary'] ?? null,
+                'unified_payload_schema' => ! empty($scraping['unified_payload']) ? array_keys((array) $scraping['unified_payload']) : [],
+                'unified_payload' => $scraping['unified_payload'] ?? [],
+            ];
+            $scrapingJson = json_encode($contractData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            $parts[] = "SCRAPED DATA & DESTINATION CONTRACT (from Web Scraping Agent):\n{$scrapingJson}";
+        }
+
+        $parts[] = "Design the Laravel technical implementation plan specifying file paths for migrations, models, controllers, requests, routes, and tests.";
+
+        return implode("\n\n", $parts);
     }
 
     protected function getOutputSchema(): array
