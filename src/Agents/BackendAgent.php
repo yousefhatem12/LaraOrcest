@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\Agents;
 
+use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
 use Yousef\LaraOrcest\Tools\PatchWriterTool;
 
 class BackendAgent extends AbstractAgent
@@ -37,6 +39,55 @@ class BackendAgent extends AbstractAgent
     public function getStateOutputKey(): string
     {
         return 'artifacts';
+    }
+
+    public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
+    {
+        $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);
+        $subRegistry = $this->getTeamDelegator()->getSubAgentRegistry();
+
+        $subKeys = ['request_validation_agent', 'service_action_agent', 'controller_resource_agent'];
+        $hasAllSubAgents = true;
+        foreach ($subKeys as $k) {
+            if (! $subRegistry->has($k)) {
+                $hasAllSubAgents = false;
+                break;
+            }
+        }
+
+        if ($teamsEnabled && $hasAllSubAgents) {
+            try {
+                $activeSkills = [
+                    'laravel-form-requests-authorization',
+                    'service-action-workflows',
+                    'controllers-resources-routes',
+                ];
+
+                $context = [
+                    'requirements_spec' => $state->requirementsSpec,
+                    'backlog' => $state->backlog,
+                    'technical_plan' => $state->technicalPlan,
+                    'prompt' => $state->prompt,
+                    'scraped_data' => $state->getScrapingResults(),
+                    'project_memory' => $this->resolveProjectMemoryContext($state),
+                ];
+
+                $delegationResult = $this->delegateSubTasks(
+                    state: $state,
+                    subAgentKeys: $subKeys,
+                    context: $context,
+                    tools: $tools,
+                    llm: $llm,
+                    activeSkillNames: $activeSkills
+                );
+
+                return $delegationResult->state;
+            } catch (\Throwable) {
+                // Fallback gracefully to single-agent execution
+            }
+        }
+
+        return parent::execute($state, $tools, $llm);
     }
 
     protected function buildUserPrompt(RunState $state): string

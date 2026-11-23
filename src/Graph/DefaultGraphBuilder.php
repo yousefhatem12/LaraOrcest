@@ -21,8 +21,11 @@ use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Graph\Nodes\AgentGraphNode;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Tools\ArtisanRunnerTool;
+use Yousef\LaraOrcest\Tools\CodebaseInspectorTool;
 use Yousef\LaraOrcest\Tools\FileReaderTool;
 use Yousef\LaraOrcest\Tools\GitCommandTool;
+use Yousef\LaraOrcest\Tools\HttpDispatchTool;
+use Yousef\LaraOrcest\Tools\HttpFetchTool;
 use Yousef\LaraOrcest\Tools\PatchWriterTool;
 use Yousef\LaraOrcest\Tools\TestRunnerTool;
 
@@ -188,6 +191,9 @@ class DefaultGraphBuilder
             'artisan_runner' => new ArtisanRunnerTool(),
             'test_runner' => new TestRunnerTool(),
             'git_command' => new GitCommandTool(),
+            'http_fetch' => new HttpFetchTool(),
+            'http_dispatch' => new HttpDispatchTool(),
+            'codebase_inspector' => new CodebaseInspectorTool(),
         ];
     }
 }

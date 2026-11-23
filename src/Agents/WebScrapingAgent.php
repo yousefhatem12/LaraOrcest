@@ -40,12 +40,22 @@ class WebScrapingAgent extends AbstractAgent
 
     public function getAllowedTools(): array
     {
-        return ['file_reader'];
+        return ['file_reader', 'http_fetch', 'http_dispatch'];
     }
 
     public function getStateOutputKey(): string
     {
         return 'scraping_results';
+    }
+
+    public function execute(RunState $state, array $tools, \Yousef\LaraOrcest\Contracts\LlmDriverContract $llm): RunState
+    {
+        // If scraping results are already present (e.g. executed via pod delegation), return existing state
+        if (! empty($state->getScrapingResults())) {
+            return $state;
+        }
+
+        return parent::execute($state, $tools, $llm);
     }
 
     /**

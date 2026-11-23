@@ -73,6 +73,28 @@ return [
             'reviewer_agent' => env('LARA_ORCEST_MODEL_REVIEWER_AGENT'),
             'web_scraping_agent' => env('LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT'),
             'swagger_agent' => env('LARA_ORCEST_MODEL_SWAGGER_AGENT'),
+
+            // Discovery & Planning Pod Sub-Agents
+            'domain_rules_agent' => env('LARA_ORCEST_MODEL_DOMAIN_RULES_AGENT'),
+            'backlog_splitter_agent' => env('LARA_ORCEST_MODEL_BACKLOG_SPLITTER_AGENT'),
+
+            // Architecture Pod Sub-Agents
+            'ddd_boundary_agent' => env('LARA_ORCEST_MODEL_DDD_BOUNDARY_AGENT'),
+            'schema_planner_agent' => env('LARA_ORCEST_MODEL_SCHEMA_PLANNER_AGENT'),
+            'api_contract_agent' => env('LARA_ORCEST_MODEL_API_CONTRACT_AGENT'),
+
+            // Database Pod Sub-Agents
+            'migration_agent' => env('LARA_ORCEST_MODEL_MIGRATION_AGENT'),
+            'model_eloquent_agent' => env('LARA_ORCEST_MODEL_MODEL_ELOQUENT_AGENT'),
+            'seeder_agent' => env('LARA_ORCEST_MODEL_SEEDER_AGENT'),
+
+            // Backend Pod Sub-Agents
+            'request_validation_agent' => env('LARA_ORCEST_MODEL_REQUEST_VALIDATION_AGENT'),
+            'service_action_agent' => env('LARA_ORCEST_MODEL_SERVICE_ACTION_AGENT'),
+            'controller_resource_agent' => env('LARA_ORCEST_MODEL_CONTROLLER_RESOURCE_AGENT'),
+
+            // Quality, Docs & Release Pod Sub-Agents
+            'feature_test_agent' => env('LARA_ORCEST_MODEL_FEATURE_TEST_AGENT'),
         ],
 
         'providers' => [
@@ -134,6 +156,38 @@ return [
             'enabled' => (bool) env('LARA_ORCEST_PARALLEL_ENABLED', true),
             'max_concurrency' => (int) env('LARA_ORCEST_MAX_CONCURRENCY', 4),
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Hierarchical Lead + Sub-Agent Teams (Pods)
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for Lead Agents delegating scoped subtasks to specialized
+    | Sub-Agents. Controls parallel execution of sub-agents and concurrency limits.
+    |
+    */
+    'teams' => [
+        'enabled' => (bool) env('LARA_ORCEST_TEAMS_ENABLED', true),
+        'parallel_sub_agents' => (bool) env('LARA_ORCEST_PARALLEL_SUB_AGENTS', true),
+        'max_sub_agents_per_lead' => (int) env('LARA_ORCEST_MAX_SUB_AGENTS_PER_LEAD', 5),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Modular Agent Skills
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for markdown-based agent skills, progressive disclosure,
+    | package defaults, and optional custom project overrides in .lara-orcest/skills/.
+    |
+    */
+    'skills' => [
+        'enabled' => (bool) env('LARA_ORCEST_SKILLS_ENABLED', true),
+        'allow_custom' => (bool) env('LARA_ORCEST_ALLOW_CUSTOM_SKILLS', true),
+        'max_active_skills' => (int) env('LARA_ORCEST_MAX_ACTIVE_SKILLS', 5),
+        'path' => env('LARA_ORCEST_SKILLS_PATH', null),
+        'custom_path' => env('LARA_ORCEST_CUSTOM_SKILLS_PATH', '.lara-orcest/skills'),
     ],
 
     /*

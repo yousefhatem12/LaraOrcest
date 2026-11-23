@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\Agents;
 
+use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
 use Yousef\LaraOrcest\Tools\GitCommandTool;
 
 class ReviewerAgent extends AbstractAgent
@@ -31,12 +33,84 @@ class ReviewerAgent extends AbstractAgent
 
     public function getAllowedTools(): array
     {
-        return ['file_reader', 'git_command'];
+        return ['file_reader', 'git_command', 'patch_writer', 'artisan_runner'];
     }
 
     public function getStateOutputKey(): string
     {
         return 'reviews';
+    }
+
+    public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
+    {
+        $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);
+        $subRegistry = $this->getTeamDelegator()->getSubAgentRegistry();
+
+        // 1. Perform review audit
+        $state = parent::execute($state, $tools, $llm);
+
+        if ($teamsEnabled) {
+            try {
+                // 2. Delegate to swagger_agent if swagger is requested/enabled and registered
+                if ($subRegistry->has('swagger_agent') && $state->shouldRunSwagger()) {
+                    $activeSkills = ['openapi-swagger-spec'];
+                    $context = [
+                        'requirements_spec' => $state->requirementsSpec,
+                        'backlog' => $state->backlog,
+                        'technical_plan' => $state->technicalPlan,
+                        'artifacts' => $state->artifacts,
+                        'reviews' => $state->reviews,
+                        'prompt' => $state->prompt,
+                    ];
+
+                    $delegationResult = $this->delegateSubTasks(
+                        state: $state,
+                        subAgentKeys: ['swagger_agent'],
+                        context: $context,
+                        tools: $tools,
+                        llm: $llm,
+                        activeSkillNames: $activeSkills
+                    );
+
+                    $state = $delegationResult->state;
+                    $swaggerRes = $delegationResult->getResult('swagger_agent');
+                    if (! empty($swaggerRes['output']) && is_array($swaggerRes['output'])) {
+                        $state = $state->withSwaggerDocs($swaggerRes['output']);
+                    }
+                }
+
+                // 3. Delegate to git_agent for milestone branch and commit if review is approved
+                if ($subRegistry->has('git_agent') && $state->isReviewApproved()) {
+                    $activeSkills = ['safe-git-release'];
+                    $context = [
+                        'prompt' => $state->prompt,
+                        'run_id' => $state->runId,
+                        'artifacts' => $state->artifacts,
+                        'reviews' => $state->reviews,
+                    ];
+
+                    $delegationResult = $this->delegateSubTasks(
+                        state: $state,
+                        subAgentKeys: ['git_agent'],
+                        context: $context,
+                        tools: $tools,
+                        llm: $llm,
+                        activeSkillNames: $activeSkills
+                    );
+
+                    $state = $delegationResult->state;
+                    $gitRes = $delegationResult->getResult('git_agent');
+                    if (! empty($gitRes['output']) && is_array($gitRes['output'])) {
+                        $gitState = array_merge($state->gitState, $gitRes['output']);
+                        $state = $state->withGitState($gitState);
+                    }
+                }
+            } catch (\Throwable) {
+                // Fallback gracefully
+            }
+        }
+
+        return $state;
     }
 
     protected function buildUserPrompt(RunState $state): string
@@ -89,3 +163,4 @@ class ReviewerAgent extends AbstractAgent
         return $state->recordReview($decision, $findings, $constraints);
     }
 }
+

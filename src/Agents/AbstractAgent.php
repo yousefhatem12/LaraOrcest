@@ -8,6 +8,8 @@ use RuntimeException;
 use Yousef\LaraOrcest\Contracts\AgentContract;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Contracts\ToolContract;
+use Yousef\LaraOrcest\Skills\Skill;
+use Yousef\LaraOrcest\Skills\SkillRegistry;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Support\Config;
 
@@ -16,9 +18,9 @@ abstract class AbstractAgent implements AgentContract
     /**
      * Builds the system prompt for this agent.
      */
-    protected function buildSystemPrompt(): string
+    protected function buildSystemPrompt(?RunState $state = null): string
     {
-        return implode("\n\n", [
+        $parts = [
             "ROLE: {$this->getRole()}",
             "GOAL: {$this->getGoal()}",
             "BACKSTORY: {$this->getBackstory()}",
@@ -28,7 +30,25 @@ abstract class AbstractAgent implements AgentContract
             "- Do not include markdown or explanations outside the JSON object.\n" .
             "- Respect strict project boundaries and follow Laravel security standards.\n" .
             "- Never access or request secret values (e.g. .env contents).",
-        ]);
+        ];
+
+        if ($state !== null) {
+            $skillsSummary = $this->buildSkillsPromptSection($state, includeFullInstructions: false);
+            if (! empty($skillsSummary)) {
+                $parts[] = $skillsSummary;
+            }
+
+            // If explicit skills were requested in state metadata, inject their full instructions
+            $activeSkillNames = (array) ($state->metadata['active_skills'] ?? []);
+            if (! empty($activeSkillNames)) {
+                $fullInstructions = $this->buildSkillsPromptSection($state, includeFullInstructions: true);
+                if (! empty($fullInstructions)) {
+                    $parts[] = $fullInstructions;
+                }
+            }
+        }
+
+        return implode("\n\n", $parts);
     }
 
     /**
@@ -70,7 +90,7 @@ abstract class AbstractAgent implements AgentContract
         }
 
         $messages = [
-            ['role' => 'system', 'content' => $this->buildSystemPrompt()],
+            ['role' => 'system', 'content' => $this->buildSystemPrompt($state)],
             ['role' => 'user', 'content' => $userPrompt],
         ];
 
@@ -184,5 +204,104 @@ abstract class AbstractAgent implements AgentContract
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    /**
+     * Resolves the SkillRegistry instance from container or fallback instantiation.
+     */
+    public function getSkillRegistry(): SkillRegistry
+    {
+        try {
+            $container = \Illuminate\Container\Container::getInstance();
+            if ($container !== null && $container->bound(SkillRegistry::class)) {
+                return $container->make(SkillRegistry::class);
+            }
+        } catch (\Throwable) {
+            // fallback
+        }
+
+        return new SkillRegistry();
+    }
+
+    /**
+     * Resolves active skills applicable to this agent.
+     *
+     * @return array<string, Skill>
+     */
+    public function resolveActiveSkills(RunState $state): array
+    {
+        $registry = $this->getSkillRegistry();
+        $requested = (array) ($state->metadata['active_skills'] ?? []);
+
+        return $registry->resolveActiveSkills($this->getName(), $requested);
+    }
+
+    /**
+     * Builds skills prompt section (summaries or full instructions) for progressive disclosure.
+     */
+    public function buildSkillsPromptSection(RunState $state, bool $includeFullInstructions = false): ?string
+    {
+        $registry = $this->getSkillRegistry();
+        if (! $registry->isEnabled()) {
+            return null;
+        }
+
+        $activeSkillNames = (array) ($state->metadata['active_skills'] ?? []);
+
+        if ($includeFullInstructions) {
+            $instructions = $registry->buildInstructions($this->getName(), $activeSkillNames);
+
+            return $instructions !== '' ? $instructions : null;
+        }
+
+        $summary = $registry->buildSummaries($this->getName(), $activeSkillNames);
+
+        return $summary !== '' ? $summary : null;
+    }
+
+    /**
+     * Resolves the TeamDelegator instance from container or fallback instantiation.
+     */
+    public function getTeamDelegator(): \Yousef\LaraOrcest\Agents\Teams\TeamDelegator
+    {
+        try {
+            $container = \Illuminate\Container\Container::getInstance();
+            if ($container !== null && $container->bound(\Yousef\LaraOrcest\Agents\Teams\TeamDelegator::class)) {
+                return $container->make(\Yousef\LaraOrcest\Agents\Teams\TeamDelegator::class);
+            }
+        } catch (\Throwable) {
+            // fallback
+        }
+
+        return new \Yousef\LaraOrcest\Agents\Teams\TeamDelegator(
+            skillRegistry: $this->getSkillRegistry()
+        );
+    }
+
+    /**
+     * Delegates sub-tasks to registered sub-agents for this lead agent.
+     *
+     * @param  array<int, string>  $subAgentKeys
+     * @param  array<string, mixed>  $context
+     * @param  array<string, ToolContract>  $tools
+     * @param  array<int, string>  $activeSkillNames
+     */
+    public function delegateSubTasks(
+        RunState $state,
+        array $subAgentKeys,
+        array $context,
+        array $tools,
+        LlmDriverContract $llm,
+        array $activeSkillNames = []
+    ): \Yousef\LaraOrcest\Agents\Teams\DelegationBatchResult {
+        return $this->getTeamDelegator()->delegate(
+            state: $state,
+            parentAgentKey: $this->getName(),
+            subAgentKeys: $subAgentKeys,
+            context: $context,
+            tools: $tools,
+            llm: $llm,
+            activeSkillNames: $activeSkillNames
+        );
     }
 }

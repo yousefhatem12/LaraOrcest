@@ -283,6 +283,50 @@ LaraOrcest implements the **Memorilla Architecture** (`ProjectMemoryStore`):
 
 ---
 
+## 7. Hierarchical Multi-Agent Pods & Wave Scheduling
+
+When hierarchical teams are enabled (`lara-orcest.teams.enabled = true`), LaraOrcest delegates tasks from Lead Agents to specialized Sub-Agents using `TeamDelegator`.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Lead Agent (e.g. DatabaseAgent)                    │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ TeamDelegator::delegate()
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             Wave Scheduling Engine                          │
+│  - Analyzes dependsOn() graph across sub-agents                             │
+│  - Detects and prevents cyclic dependencies                                 │
+│  - Schedules sub-agents into sequential or parallel execution waves         │
+└──────┬───────────────────────────────┬───────────────────────────────┬──────┘
+       │                               │                               │
+       ▼ Wave 0                        ▼ Wave 1                        ▼ Wave 2
+┌──────────────┐                ┌──────────────┐                ┌──────────────┐
+│  Sub-Agent   │                │  Sub-Agent   │                │  Sub-Agent   │
+│  (Scoped)    │──[completes]──▶│  (Scoped)    │──[completes]──▶│  (Scoped)    │
+└──────────────┘                └──────────────┘                └──────────────┘
+       │                               │                               │
+       └───────────────────────────────┼───────────────────────────────┘
+                                       │
+                                       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     ScopedToolProxy & Defense-in-Depth                      │
+│  - Enforces strict sub-agent scopePaths (e.g. database/migrations/**)       │
+│  - Injects active skills with progressive disclosure instructions            │
+│  - Records artifacts with sub-agent attribution in RunState::$artifacts     │
+│  - Logs delegations and summaries in RunState::$delegations                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### The 5 Operational Pods
+1. **Discovery & Planning Pod:** `business_analyst` + `product_manager` leading `domain_rules_agent`, `backlog_splitter_agent`, and `web_scraping_agent`.
+2. **Architecture Pod:** `architect` leading `ddd_boundary_agent`, `schema_planner_agent`, and `api_contract_agent`.
+3. **Database Pod:** `database_agent` leading `migration_agent` (Wave 0), `model_eloquent_agent` (Wave 1), and `seeder_agent` (Wave 2).
+4. **Backend Pod:** `backend_agent` leading `request_validation_agent` (Wave 0), `service_action_agent` (Wave 1), and `controller_resource_agent` (Wave 2).
+5. **Quality, Docs & Release Pod:** `qa_agent` + `reviewer_agent` leading `feature_test_agent`, `fixer_agent`, `swagger_agent`, and `git_agent`.
+
+---
+
 ## Next Steps
 - Learn more about individual agent responsibilities: **[Agents Guide](agents.md)**
 - Review security boundaries and Human-in-the-Loop review gates: **[Safety & HITL Guide](safety-and-hitl.md)**

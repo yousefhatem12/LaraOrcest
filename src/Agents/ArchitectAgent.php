@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\Agents;
 
+use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
 
 class ArchitectAgent extends AbstractAgent
 {
@@ -30,12 +32,132 @@ class ArchitectAgent extends AbstractAgent
 
     public function getAllowedTools(): array
     {
-        return ['file_reader'];
+        return ['file_reader', 'codebase_inspector'];
     }
 
     public function getStateOutputKey(): string
     {
         return 'technical_plan';
+    }
+
+    public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
+    {
+        $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);
+        $subRegistry = $this->getTeamDelegator()->getSubAgentRegistry();
+
+        $subKeys = ['ddd_boundary_agent', 'schema_planner_agent', 'api_contract_agent'];
+        $hasAllSubAgents = true;
+        foreach ($subKeys as $k) {
+            if (! $subRegistry->has($k)) {
+                $hasAllSubAgents = false;
+                break;
+            }
+        }
+
+        $hasPlanInputs = ! empty($state->requirementsSpec) || ! empty($state->backlog);
+
+        if ($teamsEnabled && $hasAllSubAgents && $hasPlanInputs) {
+            try {
+                $activeSkills = [
+                    'laravel-modular-ddd-architecture',
+                    'relational-schema-indexing',
+                    'rest-api-contract-design',
+                ];
+
+                $context = [
+                    'requirements_spec' => $state->requirementsSpec,
+                    'backlog' => $state->backlog,
+                    'prompt' => $state->prompt,
+                    'scraped_data' => $state->getScrapingResults(),
+                    'project_memory' => $this->resolveProjectMemoryContext($state),
+                ];
+
+                $delegationResult = $this->delegateSubTasks(
+                    state: $state,
+                    subAgentKeys: $subKeys,
+                    context: $context,
+                    tools: $tools,
+                    llm: $llm,
+                    activeSkillNames: $activeSkills
+                );
+
+                $updatedState = $delegationResult->state;
+                $dddOutput = (array) ($delegationResult->getResult('ddd_boundary_agent')['output'] ?? []);
+                $schemaOutput = (array) ($delegationResult->getResult('schema_planner_agent')['output'] ?? []);
+                $apiOutput = (array) ($delegationResult->getResult('api_contract_agent')['output'] ?? []);
+
+                $migrations = (array) ($schemaOutput['migrations'] ?? []);
+                $models = array_merge(
+                    (array) ($schemaOutput['models'] ?? []),
+                    (array) ($dddOutput['models'] ?? [])
+                );
+                $controllers = (array) ($apiOutput['controllers'] ?? []);
+                $requests = (array) ($apiOutput['requests'] ?? []);
+                $resources = (array) ($apiOutput['resources'] ?? []);
+                $policies = (array) ($apiOutput['policies'] ?? []);
+                $routes = (array) ($apiOutput['routes'] ?? ['routes/api.php']);
+
+                $tests = [];
+                foreach (array_keys($controllers) as $controller) {
+                    $tests["Feature: {$controller}"] = "tests/Feature/{$controller}Test.php";
+                }
+                foreach (array_keys($models) as $model) {
+                    $tests["Unit: {$model}"] = "tests/Unit/{$model}Test.php";
+                }
+
+                $executionSteps = [];
+                $migrationOrder = (array) ($schemaOutput['migration_order'] ?? array_values($migrations));
+                if (! empty($migrationOrder)) {
+                    $executionSteps[] = 'Run database migrations in chronological order: ' . implode(', ', $migrationOrder);
+                }
+                if (! empty($models)) {
+                    $executionSteps[] = 'Implement Eloquent models with relationships, casts, and fillable: ' . implode(', ', array_keys($models));
+                }
+                if (! empty($requests)) {
+                    $executionSteps[] = 'Implement FormRequest validation rules: ' . implode(', ', array_keys($requests));
+                }
+                if (! empty($resources)) {
+                    $executionSteps[] = 'Implement JsonResource response transformers: ' . implode(', ', array_keys($resources));
+                }
+                if (! empty($dddOutput['domain_services'])) {
+                    $serviceNames = array_map(fn ($s) => is_array($s) ? ($s['class'] ?? '') : (string) $s, (array) $dddOutput['domain_services']);
+                    $executionSteps[] = 'Implement domain actions and services: ' . implode(', ', array_filter($serviceNames));
+                }
+                if (! empty($controllers)) {
+                    $executionSteps[] = 'Implement API controllers: ' . implode(', ', array_keys($controllers));
+                }
+                if (! empty($policies)) {
+                    $executionSteps[] = 'Implement authorization policies: ' . implode(', ', array_keys($policies));
+                }
+                $executionSteps[] = 'Register endpoint routes in ' . implode(', ', $routes);
+                $executionSteps[] = 'Execute automated feature and unit tests to verify compliance';
+
+                $synthesizedPlan = [
+                    'migrations' => $migrations,
+                    'models' => $models,
+                    'controllers' => $controllers,
+                    'requests' => $requests,
+                    'resources' => $resources,
+                    'policies' => $policies,
+                    'routes' => $routes,
+                    'tests' => $tests,
+                    'execution_steps' => $executionSteps,
+                    'bounded_contexts' => $dddOutput['bounded_contexts'] ?? [],
+                    'directory_structure' => $dddOutput['directory_structure'] ?? [],
+                    'domain_services' => $dddOutput['domain_services'] ?? [],
+                    'schema_details' => $schemaOutput['tables'] ?? [],
+                    'indexing_strategy' => $schemaOutput['indexing_strategy'] ?? [],
+                    'endpoints' => $apiOutput['endpoints'] ?? [],
+                    'architectural_rules' => $dddOutput['architectural_rules'] ?? [],
+                ];
+
+                return $this->applyOutput($updatedState, $synthesizedPlan, $tools);
+            } catch (\Throwable) {
+                // Fallback gracefully
+            }
+        }
+
+        return parent::execute($state, $tools, $llm);
     }
 
     protected function buildUserPrompt(RunState $state): string
@@ -112,3 +234,4 @@ class ArchitectAgent extends AbstractAgent
         return $state->withTechnicalPlan($output);
     }
 }
+

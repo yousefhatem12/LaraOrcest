@@ -1202,3 +1202,481 @@ The first usable release is ready when:
 work; the graph controls execution; tools enforce security boundaries;
 `RunState` records progress; tests and review determine whether a run
 may finish.
+
+------------------------------------------------------------------------
+
+## 16. Modular Skills & Hierarchical Lead + Sub-Agent Teams (Pods) Architecture (Phase 0 Foundation)
+
+### 16.1 Overview & Concept
+To scale LaraOrcest to complex, enterprise-grade Laravel codebases without inflating prompt tokens or violating separation of concerns, the framework establishes a hierarchical delegation architecture:
+- **Lead Agents (Core 9 Pod Leads):** Govern high-level graph nodes and orchestrate domain workflows.
+- **Sub-Agents (`SubAgentInterface`):** Specialized worker agents with strict file directory allow-lists (`scopePaths`), minimal allowed tool sets (`allowedTools`), and explicit sibling dependency ordering (`dependsOn`).
+- **Modular Skills (`SkillRegistry`):** Markdown-based domain guidelines featuring progressive disclosure (lightweight summaries for overview, full instructions only when active).
+- **Scoped Tool Registry (`ToolRegistry` / `ScopedToolProxy`):** Wraps tools to strictly enforce sub-agent directory boundaries on top of global `PathGuard` security rules.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                   GraphEngine (Execution Nodes)                        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│               Lead Agent (e.g. DatabaseAgent / BackendAgent)           │
+│  - Receives high-level requirements and technical plan                 │
+│  - Consults SkillRegistry for applicable domain skills                 │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ delegates
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                  TeamDelegator (Wave Scheduler)                        │
+│  - Evaluates SubAgent dependsOn() dependencies                        │
+│  - Resolves topological waves (Sequential or Parallel)                 │
+│  - Checks ScopeConflictDetector to avoid file collisions               │
+└───────────────────┬────────────────────────────────┬───────────────────┘
+                    │ Wave 0                         │ Wave 1
+                    ▼                                ▼
+┌──────────────────────────────────────┐  ┌──────────────────────────────┐
+│ SubAgent A (MigrationDesigner)       │  │ SubAgent B (ModelBuilder)    │
+│ - scopePaths: database/migrations/** │  │ - scopePaths: app/Models/**  │
+│ - allowedTools: patch_writer, reader │  │ - allowedTools: patch_writer │
+│ - activeSkills: migration-hygiene    │  │ - dependsOn: ['sub_a']       │
+└───────────────────┬──────────────────┘  └──────────────┬───────────────┘
+                    │                                    │
+                    ▼                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                  ScopedToolProxy & PathGuard Enforcement               │
+│  - Verifies target paths match sub-agent scopePaths                   │
+│  - Enforces global PathGuard denylists (.env, .git, vendor)            │
+│  - Propagates dry_run and records artifacts with agent attribution     │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                    RunState (Immutable State Tracking)                 │
+│  - delegations: sub-agent key, parent lead, status, skills, output    │
+│  - artifacts: recorded with sub-agent attribution                      │
+│  - token_usage: aggregated across sub-agent executions                 │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 16.2 Modular Skills Foundation (`src/Skills/`)
+Skills provide explicit, structured instructions for coding standards, architectural conventions, and tool usage:
+1. **Frontmatter Specification:**
+   ```markdown
+   ---
+   name: laravel-strict-standards
+   description: Enforce declare(strict_types=1), typed class properties, and FormRequest validation.
+   agents:
+     - backend_agent
+     - architect
+     - fixer_agent
+   allowed_tools:
+     - file_reader
+     - patch_writer
+   tags:
+     - php
+     - standards
+   ---
+   # Instructions
+   ...
+   ```
+2. **Dual-Layer Loading:**
+   - Package defaults: `resources/skills/*.md`
+   - Custom project extensions: `.lara-orcest/skills/*.md` (when `lara-orcest.skills.allow_custom` is enabled). Custom skills can extend or override package skills by matching name.
+3. **Progressive Disclosure:**
+   - **Lightweight Summaries (`buildSummaries`):** Injected into system prompt overview (`name: description`), informing the model of available directives without burning context.
+   - **Task-Specific Full Instructions (`buildInstructions`):** Resolved only for requested or active skills relevant to the task, bounded by `max_active_skills` (default: 5).
+
+### 16.3 Hierarchical Sub-Agents & Team Delegation (`src/Agents/Teams/`)
+- `SubAgentInterface`: Defines `key()`, `parentAgentKey()`, `role()`, `goal()`, `backstory()`, `scopePaths()`, `allowedTools()`, `dependsOn()`, and `execute()`.
+- `AbstractSubAgent`: Base class handling prompt construction, schema validation, tool authorization, and model resolution.
+- `TeamDelegator`: Orchestrates sub-agent execution:
+  - Topologically sorts sub-agents into sequential or parallel waves based on `dependsOn()`.
+  - Detects cyclic dependencies using Tarjan/DFS traversal and throws `CyclicDependencyException`.
+  - Enforces per-sub-agent model overrides via `lara-orcest.llm.agent_models.<sub_agent_key>`, falling back to parent agent model, then default.
+  - Propagates `dry_run` to prevent mutations during dry runs.
+  - Aggregates structured outputs and records artifacts with attribution in `RunState`.
+
+### 16.4 Scoped Tool Registry (`src/Tools/`)
+- `ToolRegistry`: Manages tool instances and allows registering custom domain-specific closures via `registerFunction()`.
+- `ScopedToolProxy`: Intercepts calls to underlying tools, validating target file paths against sub-agent `scopePaths()` using glob and prefix matching. Any operation targeting files outside assigned scopes throws a `RuntimeException`.
+
+### 16.5 State & Configuration
+- `RunState::$delegations`: Records sub-agent execution summaries, parent lead agent, active skills, status, output, and timestamp.
+- `RunState::$artifacts`: Records optional `'agent'` attribution key identifying the generating sub-agent or lead agent.
+- `config/lara-orcest.php`:
+  - `teams.enabled` (bool, default `true`)
+  - `teams.parallel_sub_agents` (bool, default `true`)
+  - `teams.max_sub_agents_per_lead` (int, default `5`)
+  - `skills.enabled` (bool, default `true`)
+  - `skills.allow_custom` (bool, default `true`)
+  - `skills.max_active_skills` (int, default `5`)
+
+### 16.6 Pod Implementation Roadmap (Phases 1–5)
+- **Phase 0 (Core Foundation - Completed):** `Skill`, `SkillRegistry`, `SubAgentInterface`, `AbstractSubAgent`, `SubAgentRegistry`, `TeamDelegator`, `ToolRegistry`, `ScopedToolProxy`, and `RunState` delegation tracking.
+- **Phase 1 (Discovery & Planning Pod - Completed):** `BusinessAnalystAgent` & `ProductManagerAgent` as Lead Agents with `DomainRulesAgent` (`domain_rules_agent`), `BacklogSplitterAgent` (`backlog_splitter_agent`), and `WebScrapingSubAgent` (`web_scraping_agent`), supported by `HttpFetchTool` and `HttpDispatchTool`.
+- **Phase 2 (Architecture Pod):** `ArchitectAgent` sub-agents (`ComponentDesigner`, `EventFlowPlanner`, `InterfaceContractAuthor`).
+- **Phase 3 (Database Pod):** `DatabaseAgent` sub-agents (`MigrationDesigner`, `SchemaValidator`, `SeederBuilder`, `IndexOptimizer`).
+- **Phase 4 (Backend Pod):** `BackendAgent` sub-agents (`RoutePlanner`, `ControllerBuilder`, `FormRequestBuilder`, `PolicyDesigner`, `ResourceTransformerBuilder`).
+- **Phase 5 (Quality & Release Pod):** `QaAgent`, `FixerAgent`, and `ReviewerAgent` sub-agents (`UnitTestAuthor`, `RegressionTester`, `SecurityAuditor`, `ChangelogBuilder`).
+
+------------------------------------------------------------------------
+
+## 17. Discovery & Planning Pod (Phase 1 Specification)
+
+### 17.1 Pod Overview & Structure
+The **Discovery & Planning Pod** establishes the domain boundaries, specifications, and ordered engineering backlog for any requested feature or application before code generation begins:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                      Discovery & Planning Pod                          │
+├───────────────────────────────────┬────────────────────────────────────┤
+│  Lead Agent: BusinessAnalystAgent │  Lead Agent: ProductManagerAgent   │
+│  - Requirements specification     │  - Ordered implementation backlog  │
+│  - Domain model identification    │  - Vertical task slicing           │
+│  - Active Skill:                  │  - Active Skill:                   │
+│    business-requirements-analysis │    backlog-task-decomposition      │
+└─────────────────┬─────────────────┴──────────────────┬─────────────────┘
+                  │ delegates                          │ delegates
+                  ▼                                    ▼
+┌───────────────────────────────────┐┌───────────────────────────────────┐
+│ Sub-Agent: DomainRulesAgent       ││ Sub-Agent: BacklogSplitterAgent   │
+│ - Key: domain_rules_agent         ││ - Key: backlog_splitter_agent     │
+│ - Parent: business_analyst        ││ - Parent: product_manager         │
+│ - Focus: invariants, edge cases,  ││ - Focus: depends_on graph,        │
+│   state machine transitions       ││   directory scope_paths           │
+│ - Allowed Tools: file_reader      ││ - Allowed Tools: file_reader      │
+│ - Scope Paths: ['docs/**']        ││ - Scope Paths: ['docs/**']        │
+└───────────────────────────────────┘└─────────────────┬─────────────────┘
+                                                       │ conditional
+                                                       ▼
+                                     ┌───────────────────────────────────┐
+                                     │ Sub-Agent: WebScrapingSubAgent    │
+                                     │ - Key: web_scraping_agent         │
+                                     │ - Parent: product_manager         │
+                                     │ - Focus: 2-site data extraction,  │
+                                     │   normalization, & HTTP dispatch  │
+                                     │ - Active Skill:                   │
+                                     │   two-site-scraping-dispatch      │
+                                     │ - Allowed Tools:                  │
+                                     │   file_reader, http_fetch,        │
+                                     │   http_dispatch                   │
+                                     │ - Scope Paths:                    │
+                                     │   ['docs/**', 'web_scraping/**']  │
+                                     └───────────────────────────────────┘
+```
+
+### 17.2 Dedicated Skills & Progressive Disclosure
+1. **`business-requirements-analysis.md`:**
+   - Injected into `business_analyst` and `domain_rules_agent`.
+   - Directs the extraction of functional requirements, non-functional requirements, domain invariants, entity life-cycle state machines, and boundary edge cases.
+2. **`backlog-task-decomposition.md`:**
+   - Injected into `product_manager` and `backlog_splitter_agent`.
+   - Enforces atomic task breakdown with verifiable acceptance criteria, explicit `depends_on` task graphs (preventing deadlocks and enabling parallel wave execution), and least-privilege `scope_paths` allow-lists (e.g. `['database/migrations/**']`).
+3. **`two-site-scraping-dispatch.md`:**
+   - Injected into `web_scraping_agent` and `product_manager`.
+   - Guides extraction from two source websites, schema mapping to BA/PM criteria, SSRF protection, sensitive header redaction, and `dry_run` preview safety.
+
+### 17.3 Safe Tools (`HttpFetchTool` & `HttpDispatchTool`)
+- **`HttpFetchTool` (`http_fetch`):**
+  - Fetches and sanitizes HTML or JSON content from a target URL.
+  - Enforces SSRF guardrails: blocks loopback (`127.0.0.1`, `localhost`) and cloud metadata services (`169.254.169.254`, `metadata.google.internal`) unless `lara-orcest.web_scraping.allow_private_ips` is explicitly enabled.
+  - Cleans HTML markup (stripping scripts, styles, SVGs, and comments) to conserve prompt context tokens.
+- **`HttpDispatchTool` (`http_dispatch`):**
+  - Dispatches normalized JSON payloads to an external HTTP destination endpoint via `POST`, `PUT`, `PATCH`, or `GET`.
+  - Implements `setDryRun(bool $dryRun)`: in `dry_run` mode, returns a structured preview without making live external HTTP calls.
+  - Redacts sensitive authentication tokens and headers in logs and returned artifacts.
+
+### 17.4 Lead Agent Delegation & Fallback Flow
+- When `lara-orcest.teams.enabled` is `true`:
+  - `BusinessAnalystAgent` delegates to `domain_rules_agent`, enriching its requirements specification with domain invariants and edge cases.
+  - `ProductManagerAgent` delegates to `backlog_splitter_agent`, producing tasks with structured `depends_on` and `scope_paths`.
+  - Delegations are recorded in `RunState::$delegations` with sub-agent keys, status, active skills, and summaries.
+- When `lara-orcest.teams.enabled` is `false`:
+  - Both agents gracefully fall back to direct single-turn execution, ensuring full backward compatibility.
+
+## 18. Phase 2 — Architecture Pod (`architect`, `ddd_boundary_agent`, `schema_planner_agent`, `api_contract_agent`)
+
+### 18.1 Pod Architecture & Hierarchy
+The Architecture Pod translates business requirements and backlog stories into a robust, idiomatic Laravel technical implementation plan.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                          Architecture Pod                              │
+├────────────────────────────────────────────────────────────────────────┤
+│  Lead Agent: ArchitectAgent                                            │
+│  - Synthesizes technical_plan in RunState                              │
+│  - Active Skills: laravel-modular-ddd-architecture,                    │
+│    relational-schema-indexing, rest-api-contract-design                │
+│  - Allowed Tools: file_reader, codebase_inspector                      │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ delegates in parallel waves
+         ┌──────────────────────────┼──────────────────────────┐
+         ▼                          ▼                          ▼
+┌─────────────────────────┐┌─────────────────────────┐┌─────────────────────────┐
+│ Sub-Agent:              ││ Sub-Agent:              ││ Sub-Agent:              │
+│ DddBoundaryAgent        ││ SchemaPlannerAgent      ││ ApiContractAgent        │
+│ - Key:                  ││ - Key:                  ││ - Key:                  │
+│   ddd_boundary_agent    ││   schema_planner_agent  ││   api_contract_agent    │
+│ - Parent: architect     ││ - Parent: architect     ││ - Parent: architect     │
+│ - Focus: Bounded        ││ - Focus: Normalized     ││ - Focus: REST endpoints,│
+│   contexts, layers,     ││   tables, migrations,   ││   controllers, Form-    │
+│   services, tenant-     ││   models, relationships,││   Requests, Resources,  │
+│   isolation invariants  ││   indexes, audit cols   ││   policies, api routes  │
+│ - Allowed Tools:        ││ - Allowed Tools:        ││ - Allowed Tools:        │
+│   file_reader,          ││   file_reader,          ││   file_reader,          │
+│   codebase_inspector    ││   codebase_inspector    ││   codebase_inspector    │
+│ - Scope: ['docs/**']    ││ - Scope: ['docs/**']    ││ - Scope: ['docs/**']    │
+└─────────────────────────┘└─────────────────────────┘└─────────────────────────┘
+```
+
+### 18.2 Dedicated Architectural Skills
+1. **`laravel-modular-ddd-architecture.md`:**
+   - Injected into `architect` and `ddd_boundary_agent`.
+   - Guides bounded context separation, application services/actions, domain models, and tenant isolation patterns while maintaining Laravel simplicity.
+2. **`relational-schema-indexing.md`:**
+   - Injected into `architect` and `schema_planner_agent`.
+   - Dictates strict column typing, foreign key cascade behaviors, composite indexing for performance, and chronological migration sequencing.
+3. **`rest-api-contract-design.md`:**
+   - Injected into `architect` and `api_contract_agent`.
+   - Standardizes RESTful endpoint design, FormRequest validation rules, JsonResource envelope transformers, policy gates, and OpenAPI 3.0 error schemas.
+
+### 18.3 Read-Only Inspection Tool (`CodebaseInspectorTool`)
+- **`CodebaseInspectorTool` (`codebase_inspector`):**
+  - Read-only codebase explorer enforcing `PathGuard` and least privilege.
+  - Supports operations:
+    - `list_directory`: safe traversal of existing project structure.
+    - `inspect_models`: lists existing Eloquent models in `app/Models/` or custom directories.
+    - `inspect_migrations`: inspects existing migrations in `database/migrations/` to prevent timestamp conflicts.
+    - `inspect_routes`: scans route declarations in `routes/` to prevent URI collisions.
+    - `search_symbols`: searches classes and interfaces across permitted directories.
+  - Guarantees zero file mutations during the architectural design phase.
+
+### 18.4 Synthesis & Plan Assembly
+- `ArchitectAgent` delegates to all three architectural sub-agents in parallel wave execution (when `teams.parallel_sub_agents` is enabled).
+- Synthesizes outputs into `RunState::$technicalPlan`:
+  - `migrations`: chronological list from `schema_planner_agent`.
+  - `models`: merged models from schema planner and DDD boundary agent.
+  - `controllers`, `requests`, `resources`, `policies`, `routes`: from `api_contract_agent`.
+  - `bounded_contexts`, `directory_structure`, `domain_services`: from `ddd_boundary_agent`.
+  - `execution_steps`: ordered workflow steps guiding downstream Database and Backend agents.
+- Automatically falls back to single-turn prompt execution if `lara-orcest.teams.enabled` is `false`.
+
+## 19. Phase 3 — Database Pod (`database_agent`, `migration_agent`, `model_eloquent_agent`, `seeder_agent`)
+
+### 19.1 Pod Architecture & Sequential Wave Order
+The Database Pod transforms the `technical_plan` schema specifications into production-ready migrations, strictly-typed Eloquent models, model factories, and idempotent seeders. Because models depend on migrations, and seeders depend on models, the sub-agents declare strict dependency relationships executed in sequential waves.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                            Database Pod                                │
+├────────────────────────────────────────────────────────────────────────┤
+│  Lead Agent: DatabaseAgent                                             │
+│  - Aggregates database artifacts into RunState                         │
+│  - Active Skills: laravel-safe-migrations,                             │
+│    eloquent-models-and-factories, idempotent-database-seeders           │
+│  - Allowed Tools: file_reader, patch_writer, artisan_runner            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ sequential waves (dependsOn)
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Wave 0: MigrationAgent (key: migration_agent)                          │
+│ - dependsOn: []                                                        │
+│ - scopePaths: ['database/migrations/**']                               │
+│ - allowedTools: ['file_reader', 'patch_writer', 'artisan_runner']      │
+│ - Role: Anonymous migrations, foreign keys, indexes, reversible down() │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ completes
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Wave 1: ModelEloquentAgent (key: model_eloquent_agent)                 │
+│ - dependsOn: ['migration_agent']                                       │
+│ - scopePaths: ['app/Models/**', 'app/Domains/**/Models/**',            │
+│                'database/factories/**']                                │
+│ - allowedTools: ['file_reader', 'patch_writer', 'artisan_runner']      │
+│ - Role: Strictly typed Eloquent models, relations, casts, factories    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ completes
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Wave 2: SeederAgent (key: seeder_agent)                                │
+│ - dependsOn: ['model_eloquent_agent']                                  │
+│ - scopePaths: ['database/seeders/**']                                  │
+│ - allowedTools: ['file_reader', 'patch_writer', 'artisan_runner']      │
+│ - Role: Idempotent seeders (firstOrCreate), DatabaseSeeder composition │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 19.2 Dedicated Database Skills
+1. **`laravel-safe-migrations.md`:**
+   - Injected into `database_agent` and `migration_agent`.
+   - Enforces anonymous migration classes, strict typing, explicit column nullability/defaults, foreign key constraints with cascades, composite indexing, and reversible rollback symmetry in `down()`.
+2. **`eloquent-models-and-factories.md`:**
+   - Injected into `database_agent` and `model_eloquent_agent`.
+   - Enforces strict typing, `$fillable` protection, typed relationship return types (`BelongsTo`, `HasMany`, etc.), attribute casts, and realistic model factories using Faker.
+3. **`idempotent-database-seeders.md`:**
+   - Injected into `database_agent` and `seeder_agent`.
+   - Directs the use of `firstOrCreate()`, `updateOrCreate()`, or existence checks to prevent duplicate key errors on subsequent seeder runs, wiring seeders into `DatabaseSeeder::run()`.
+
+### 19.3 Scoped Capabilities & Defense-in-Depth
+- Each helper sub-agent is wrapped by `ScopedToolProxy` enforcing strict `scopePaths()` boundaries. For example, `MigrationAgent` is prevented from mutating files outside `database/migrations/**`.
+- `ArtisanRunnerTool` enforces command allow-lists and blocks dangerous flags (`--force`, `--drop-views`, `--drop-types`, `--seed`) without human review.
+- In `--dry-run` mode, file modifications return non-destructive diff previews.
+
+### 19.4 Lead Agent Delegation & Fallback Flow
+- When `lara-orcest.teams.enabled` is `true`:
+  - `DatabaseAgent` delegates sequentially across Waves 0, 1, and 2.
+  - Sub-agent artifacts are recorded in `RunState::$artifacts` with sub-agent attribution (`migration_agent`, `model_eloquent_agent`, `seeder_agent`).
+  - Delegations are tracked in `RunState::$delegations`.
+- When `lara-orcest.teams.enabled` is `false`:
+  - `DatabaseAgent` falls back to single-turn prompt execution.
+
+## 20. Phase 4 — Backend Pod (`backend_agent`, `request_validation_agent`, `service_action_agent`, `controller_resource_agent`)
+
+### 20.1 Pod Architecture & Sequential Wave Order
+The Backend Pod translates the `technical_plan` controller, request, and route specifications into concrete, production-ready backend code. Because services and actions depend on validated request boundaries, and controllers depend on actions/services, the sub-agents declare strict dependency relationships executed in sequential waves.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                              Backend Pod                               │
+├────────────────────────────────────────────────────────────────────────┤
+│  Lead Agent: BackendAgent                                              │
+│  - Aggregates backend artifacts and routes into RunState               │
+│  - Active Skills: laravel-form-requests-authorization,                 │
+│    service-action-workflows, controllers-resources-routes              │
+│  - Allowed Tools: file_reader, patch_writer, artisan_runner            │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ sequential wave dispatch
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Wave 0: RequestValidationAgent (key: request_validation_agent)         │
+│ - dependsOn: []                                                        │
+│ - scopePaths: ['app/Http/Requests/**', 'app/Domains/**/Requests/**',   │
+│                'app/Policies/**', 'app/Domains/**/Policies/**']        │
+│ - allowedTools: ['file_reader', 'patch_writer', 'artisan_runner']      │
+│ - Role: FormRequest validation rules, authorization gates, Policies    │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ completes
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Wave 1: ServiceActionAgent (key: service_action_agent)                 │
+│ - dependsOn: ['request_validation_agent']                              │
+│ - scopePaths: ['app/Services/**', 'app/Actions/**', 'app/Events/**',   │
+│                'app/Listeners/**', 'app/Domains/**/Actions/**',        │
+│                'app/Domains/**/Services/**']                           │
+│ - allowedTools: ['file_reader', 'patch_writer', 'artisan_runner']      │
+│ - Role: Single-responsibility Actions, transactions, domain workflows  │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ completes
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ Wave 2: ControllerResourceAgent (key: controller_resource_agent)       │
+│ - dependsOn: ['service_action_agent']                                  │
+│ - scopePaths: ['app/Http/Controllers/**', 'app/Http/Resources/**',     │
+│                'routes/**', 'app/Domains/**/Http/**']                  │
+│ - allowedTools: ['file_reader', 'patch_writer', 'artisan_runner']      │
+│ - Role: Thin API controllers, JsonResources, RESTful route binding    │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 20.2 Dedicated Backend Skills
+1. **`laravel-form-requests-authorization.md`:**
+   - Injected into `backend_agent` and `request_validation_agent`.
+   - Enforces dedicated FormRequests, `rules()` validation arrays, tenant/project scoping rules, and Policy authorization gates.
+2. **`service-action-workflows.md`:**
+   - Injected into `backend_agent` and `service_action_agent`.
+   - Directs single-responsibility Action classes (`execute()`), transactional safety with `DB::transaction()`, and domain event dispatches.
+3. **`controllers-resources-routes.md`:**
+   - Injected into `backend_agent` and `controller_resource_agent`.
+   - Mandates thin controllers delegating to Actions/Services, `JsonResource` response transformers, consistent status codes (`200`, `201`, `204`), and RESTful route declarations in `routes/api.php`.
+
+### 20.3 Scoped Capabilities & Defense-in-Depth
+- Each helper sub-agent is wrapped by `ScopedToolProxy` enforcing strict `scopePaths()` boundaries. For example, `RequestValidationAgent` cannot mutate controllers or routes.
+- `ArtisanRunnerTool` enforces command allow-lists and blocks destructive flags.
+- In `--dry-run` mode, file modifications return non-destructive diff previews.
+
+### 20.4 Lead Agent Delegation & Fallback Flow
+- When `lara-orcest.teams.enabled` is `true`:
+  - `BackendAgent` delegates sequentially across Waves 0, 1, and 2.
+  - Sub-agent artifacts are recorded in `RunState::$artifacts` with sub-agent attribution (`request_validation_agent`, `service_action_agent`, `controller_resource_agent`).
+  - Delegations are tracked in `RunState::$delegations`.
+- When `lara-orcest.teams.enabled` is `false`:
+  - `BackendAgent` falls back cleanly to single-turn prompt execution.
+
+## 21. Phase 5 — Quality, Docs & Release Pod (`qa_agent`, `reviewer_agent`, `feature_test_agent`, `fixer_agent`, `swagger_agent`, `git_agent`)
+
+### 21.1 Pod Architecture & Collaboration
+The Quality, Docs & Release Pod ensures end-to-end reliability, API contract conformance, and git milestone safety. It organizes two Lead Agents (`qa_agent` and `reviewer_agent`) collaborating with specialized helper sub-agents.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                    Quality, Docs & Release Pod                         │
+├────────────────────────────────────────────────────────────────────────┤
+│  Lead Agent 1: QaAgent (Automated QA & Test Engineer)                  │
+│  - Active Skills: laravel-feature-testing, root-cause-test-fixing      │
+│  - Delegates test writing to feature_test_agent (Wave 0)               │
+│  - Executes test_runner; triggers fixer_agent on test failure          │
+│                                                                        │
+│  Wave 0: FeatureTestAgent (key: feature_test_agent)                    │
+│  - scopePaths: ['tests/**']                                            │
+│  - allowedTools: ['file_reader', 'patch_writer', 'test_runner',         │
+│                   'artisan_runner']                                    │
+│  - Role: Generates comprehensive Pest/PHPUnit tests from acceptance    │
+│          criteria and runs test runner                                 │
+│                                                                        │
+│  Conditional Retry: FixerSubAgent (key: fixer_agent)                   │
+│  - dependsOn: ['feature_test_agent']                                   │
+│  - scopePaths: ['app/**', 'database/**', 'routes/**', 'tests/**']      │
+│  - allowedTools: ['file_reader', 'patch_writer', 'artisan_runner',     │
+│                   'test_runner']                                       │
+│  - Role: Root-cause debugging and surgical fixes within retry budget   │
+├────────────────────────────────────────────────────────────────────────┤
+│  Lead Agent 2: ReviewerAgent (Quality & Security Reviewer)             │
+│  - Active Skills: openapi-swagger-spec, safe-git-release               │
+│  - Performs comprehensive code audit & security evaluation             │
+│                                                                        │
+│  Docs Sub-Agent: SwaggerSubAgent (key: swagger_agent)                  │
+│  - scopePaths: ['docs/**', 'storage/api-docs/**', 'openapi.json',      │
+│                 'openapi.yaml']                                        │
+│  - allowedTools: ['file_reader', 'patch_writer', 'artisan_runner']      │
+│  - Role: Generates and updates OpenAPI 3.0+ / Swagger specifications   │
+│                                                                        │
+│  Release Sub-Agent: GitSubAgent (key: git_agent)                       │
+│  - scopePaths: ['*']                                                   │
+│  - allowedTools: ['git_command', 'file_reader']                        │
+│  - Role: Feature branch creation, clean milestone commits, and status  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 21.2 Dedicated Quality, Docs & Release Skills
+1. **`laravel-feature-testing.md`:**
+   - Injected into `qa_agent` and `feature_test_agent`.
+   - Directs test generation in `tests/Feature/**` and `tests/Unit/**`, covering happy paths (`200`/`201`), validation errors (`422`), authorization gates (`403`), and multi-tenant isolation.
+2. **`root-cause-test-fixing.md`:**
+   - Injected into `qa_agent` and `fixer_agent`.
+   - Guides stack trace root-cause diagnosis, minimal surgical patching without weakening assertions, and strict adherence to the `max_fix_attempts` retry budget.
+3. **`openapi-swagger-spec.md`:**
+   - Injected into `reviewer_agent` and `swagger_agent`.
+   - Enforces OpenAPI 3.0.3+ compliance, complete path/operation documentation, FormRequest request body validation schemas, and `JsonResource` response models.
+4. **`safe-git-release.md`:**
+   - Injected into `reviewer_agent` and `git_agent`.
+   - Directs safe branch naming (`orcest/...`), protected branch safeguards (`main`, `master`, `production`), secret exclusion (`.env`), and dry-run commit simulation.
+
+### 21.3 Scoped Capabilities & Defense-in-Depth
+- `FeatureTestAgent` is restricted strictly to `tests/**` via `ScopedToolProxy`.
+- `FixerSubAgent` is scoped to `['app/**', 'database/**', 'routes/**', 'tests/**']` and bounded by `max_fix_attempts`.
+- `SwaggerSubAgent` is scoped strictly to documentation paths (`docs/**`, `storage/api-docs/**`, `openapi.json`, `openapi.yaml`).
+- `GitSubAgent` operates with non-destructive dry-run simulation in `--dry-run` mode and respects Human-in-the-Loop gates (`before_commit`).
+
+### 21.4 Lead Agent Delegation & Fallback Flow
+- When `lara-orcest.teams.enabled` is `true`:
+  - `QaAgent` delegates to `feature_test_agent`, runs `test_runner`, and delegates to `fixer_agent` if tests fail.
+  - `ReviewerAgent` audits code, delegates to `swagger_agent` if OpenAPI docs are requested, and coordinates with `git_agent` for milestone commit upon approval.
+- When `lara-orcest.teams.enabled` is `false`:
+  - `QaAgent` and `ReviewerAgent` fall back to single-agent execution loops.
+
+
+
+
+
+

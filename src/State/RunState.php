@@ -42,6 +42,7 @@ class RunState
         public readonly array $testResults = [],
         public readonly array $reviews = [],
         public readonly array $scrapingResults = [],
+        public readonly array $delegations = [],
         public readonly array $guardrails = [
             'step_count' => 0,
             'max_steps' => 40,
@@ -159,7 +160,15 @@ class RunState
             prompt: trim($prompt),
             currentNode: 'start',
             status: self::STATUS_RUNNING,
+            requirementsSpec: (array) ($options['requirements_spec'] ?? $options['requirementsSpec'] ?? []),
+            backlog: (array) ($options['backlog'] ?? []),
+            technicalPlan: (array) ($options['technical_plan'] ?? $options['technicalPlan'] ?? []),
+            gitState: (array) ($options['git_state'] ?? $options['gitState'] ?? []),
+            artifacts: (array) ($options['artifacts'] ?? []),
+            testResults: (array) ($options['test_results'] ?? $options['testResults'] ?? []),
+            reviews: (array) ($options['reviews'] ?? []),
             scrapingResults: $scrapingResults,
+            delegations: (array) ($options['delegations'] ?? []),
             guardrails: [
                 'step_count' => 0,
                 'max_steps' => $maxSteps,
@@ -218,6 +227,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -240,6 +250,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: array_merge($this->metadata, ['updated_at' => date('c')])
         );
@@ -260,6 +271,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -280,6 +292,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -300,6 +313,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -320,6 +334,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -340,6 +355,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -360,6 +376,7 @@ class RunState
             testResults: $testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -380,6 +397,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -400,6 +418,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $guardrails,
             metadata: $this->metadata
         );
@@ -420,6 +439,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $metadata
         );
@@ -454,6 +474,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $guardrails,
             metadata: $this->metadata
         );
@@ -488,20 +509,26 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $guardrails,
             metadata: $this->metadata
         );
     }
 
-    public function recordArtifact(string $path, string $action, string $summary): self
+    public function recordArtifact(string $path, string $action, string $summary, ?string $agent = null): self
     {
         $artifacts = $this->artifacts;
-        $artifacts[] = [
+        $entry = [
             'path' => $path,
             'action' => $action,
             'summary' => $summary,
             'timestamp' => date('c'),
         ];
+        if ($agent !== null) {
+            $entry['agent'] = $agent;
+            $entry['sub_agent'] = $agent;
+        }
+        $artifacts[] = $entry;
 
         return new self(
             runId: $this->runId,
@@ -516,9 +543,105 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
+    }
+
+
+    public function withDelegations(array $delegations): self
+    {
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            scrapingResults: $this->scrapingResults,
+            delegations: $delegations,
+            guardrails: $this->guardrails,
+            metadata: $this->metadata
+        );
+    }
+
+    /**
+     * @param  array<int, string>  $activeSkills
+     * @param  array<string, mixed>  $output
+     * @param  array<int, mixed>  $artifacts
+     * @param  array<string, mixed>  $metadata
+     */
+    public function recordDelegation(
+        string $subAgentKey,
+        string $parentAgentKey,
+        array $activeSkills,
+        string $status,
+        string $summary,
+        array $output = [],
+        array $artifacts = [],
+        array $metadata = []
+    ): self {
+        $delegations = $this->delegations;
+        $delegations[] = [
+            'sub_agent' => $subAgentKey,
+            'parent_agent' => $parentAgentKey,
+            'active_skills' => $activeSkills,
+            'status' => $status,
+            'summary' => $summary,
+            'output' => $output,
+            'artifacts' => $artifacts,
+            'metadata' => $metadata,
+            'timestamp' => date('c'),
+        ];
+
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            scrapingResults: $this->scrapingResults,
+            delegations: $delegations,
+            guardrails: $this->guardrails,
+            metadata: $this->metadata
+        );
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function getDelegations(): array
+    {
+        return $this->delegations;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function getDelegationsForAgent(string $parentAgentKey): array
+    {
+        $matching = [];
+        $needle = strtolower(trim($parentAgentKey));
+
+        foreach ($this->delegations as $delegation) {
+            if (isset($delegation['parent_agent']) && strtolower(trim((string) $delegation['parent_agent'])) === $needle) {
+                $matching[] = $delegation;
+            }
+        }
+
+        return $matching;
     }
 
     public function recordTestResult(bool $passed, int $exitCode, string $summary, string $output): self
@@ -544,6 +667,7 @@ class RunState
             testResults: $results,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -572,6 +696,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $this->metadata
         );
@@ -606,6 +731,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $guardrails,
             metadata: $this->metadata
         );
@@ -651,6 +777,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: array_merge($meta, ['updated_at' => date('c')])
         ));
@@ -813,6 +940,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: array_merge($meta, ['updated_at' => date('c')])
         ));
@@ -875,6 +1003,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: array_merge($meta, ['updated_at' => date('c')])
         );
@@ -909,6 +1038,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $meta
         );
@@ -938,6 +1068,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $sanitized,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $meta
         );
@@ -1315,6 +1446,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $meta
         );
@@ -1344,6 +1476,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $meta
         );
@@ -1641,6 +1774,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $meta
         );
@@ -1769,6 +1903,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $meta
         );
@@ -1814,6 +1949,7 @@ class RunState
             testResults: $this->testResults,
             reviews: $this->reviews,
             scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
             guardrails: $this->guardrails,
             metadata: $meta
         );
@@ -2058,6 +2194,13 @@ class RunState
             }
         }
 
+        $mergedDelegations = $this->delegations;
+        foreach ($branchStatesList as $bState) {
+            if (! empty($bState->delegations)) {
+                $mergedDelegations = array_merge($mergedDelegations, $bState->delegations);
+            }
+        }
+
         return new self(
             runId: $this->runId,
             prompt: $this->prompt,
@@ -2071,6 +2214,7 @@ class RunState
             testResults: $mergedTestResults,
             reviews: $mergedReviews,
             scrapingResults: $mergedScraping,
+            delegations: $mergedDelegations,
             guardrails: $guardrails,
             metadata: $meta
         );
@@ -2100,6 +2244,7 @@ class RunState
             'test_results' => $this->testResults,
             'reviews' => $this->reviews,
             'scraping_results' => $this->getScrapingResults(),
+            'delegations' => $this->delegations,
             'guardrails' => $this->guardrails,
             'metadata' => $sanitizedMetadata,
         ];
@@ -2129,6 +2274,7 @@ class RunState
             testResults: (array) ($data['test_results'] ?? []),
             reviews: (array) ($data['reviews'] ?? []),
             scrapingResults: (array) ($data['scraping_results'] ?? ($data['metadata']['web_scraping'] ?? [])),
+            delegations: (array) ($data['delegations'] ?? []),
             guardrails: (array) ($data['guardrails'] ?? [
                 'step_count' => 0,
                 'max_steps' => 40,

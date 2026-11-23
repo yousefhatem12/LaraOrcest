@@ -9,6 +9,13 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/yousefhatem12/LaraOrcest/actions/workflows/tests.yml"><img src="https://github.com/yousefhatem12/LaraOrcest/actions/workflows/tests.yml/badge.svg" alt="Tests Status"></a>
+  <a href="https://github.com/yousefhatem12/LaraOrcest/actions/workflows/docs.yml"><img src="https://github.com/yousefhatem12/LaraOrcest/actions/workflows/docs.yml/badge.svg" alt="Docs Deployment"></a>
+  <a href="https://packagist.org/packages/yousef/lara-orcest"><img src="https://img.shields.io/packagist/v/yousef/lara-orcest.svg?style=flat-square" alt="Latest Version on Packagist"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="Software License"></a>
+</p>
+
+<p align="center">
   <a href="#vision--core-philosophy">Vision</a> •
   <a href="docs/index.md">Documentation</a> •
   <a href="docs/quickstart.md">Quickstart</a> •
@@ -115,7 +122,7 @@ In modern software development, writing high-quality Laravel features requires m
 | **`business_analyst`** | Laravel Domain & Systems Analyst | Analyzes prompt and codebase to produce unambiguous requirements, entities, business rules, and edge cases. | `file_reader` | `requirements_spec` |
 | **`product_manager`** | Technical Product Manager | Breaks down the specification into ordered tasks with testable acceptance criteria. | `file_reader` | `backlog` |
 | **`web_scraping_agent`** | Intelligent Web Scraping & Ingestion Specialist | Extracts and normalizes data from target website URLs and dispatches unified payloads to destination endpoints. | `file_reader` | `scraping_results` |
-| **`architect`** | Senior Laravel Software Architect | Designs clean, idiomatic architecture mapping tasks to migrations, models, controllers, requests, routes, and tests. | `file_reader` | `technical_plan` |
+| **`architect`** | Senior Laravel Software Architect | Designs clean, idiomatic architecture mapping tasks to migrations, models, controllers, requests, routes, and tests. | `file_reader`, `codebase_inspector` | `technical_plan` |
 | **`git_agent`** | Source Control & Release Hygiene Agent | Creates and isolates changes on a feature branch (`orcest/...`), verifies clean working trees, and manages milestone commits. | `git_command` | `git_state` |
 | **`database_agent`** | Laravel Database & Eloquent Specialist | Generates normalized migrations, factories, relationships, and Eloquent models scoped to `database/` and `app/Models/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` |
 | **`backend_agent`** | Laravel Backend & API Engineer | Implements form requests, controllers, actions, and API routes scoped to `app/`, `routes/`, and `config/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` |
@@ -233,6 +240,44 @@ Prompts are treated as untrusted inputs with strict sandbox boundaries:
 - **ArtisanRunnerTool:** Executes allow-listed `make:*` commands and test commands; blocks dangerous flags (`--force`, `--drop-views`, `--seed`) and shell metacharacters.
 - **TestRunnerTool:** Executes `php artisan test --without-tty` with timeouts and structured failure parsing.
 - **GitCommandTool:** Manages branches, staging, and commits while blocking destructive commands (`push --force`, `reset --hard`) and direct commits to protected branches (`main`, `master`, `production`, `staging`).
+
+### 8. Modular Skills & Hierarchical Agent Pods
+Natively organizes specialized agents into hierarchical Lead and Sub-Agent teams (`Pods`) with progressive disclosure skills:
+- **SkillRegistry & Progressive Disclosure:** Markdown skills (`resources/skills/*.md` and `.lara-orcest/skills/*.md`) inject lightweight summaries during planning and resolve full instruction blocks only when relevant, keeping token usage lean.
+- **Discovery & Planning Pod:**
+  - `business_analyst` leads `domain_rules_agent` with the `business-requirements-analysis` skill to extract invariants, edge cases, and state transitions.
+  - `product_manager` leads `backlog_splitter_agent` with the `backlog-task-decomposition` skill to produce atomic tasks with explicit `depends_on` graphs and least-privilege `scope_paths`.
+  - Conditional `web_scraping_agent` extracts structured data from two URLs using `HttpFetchTool` and `HttpDispatchTool` under SSRF guardrails and dry-run preview mode.
+- **Architecture Pod:**
+  - `architect` leads `ddd_boundary_agent`, `schema_planner_agent`, and `api_contract_agent`.
+  - Driven by dedicated skills: `laravel-modular-ddd-architecture`, `relational-schema-indexing`, and `rest-api-contract-design`.
+  - Sub-agents utilize `CodebaseInspectorTool` for read-only workspace, model, migration, route, and symbol inspection without mutating files.
+  - Runs in parallel waves when `teams.parallel_sub_agents` is enabled, synthesizing a comprehensive `technical_plan` in `RunState`.
+- **Database Pod:**
+  - `database_agent` leads `migration_agent`, `model_eloquent_agent`, and `seeder_agent`.
+  - Driven by dedicated skills: `laravel-safe-migrations`, `eloquent-models-and-factories`, and `idempotent-database-seeders`.
+  - Executes sequentially in 3 distinct waves based on strict `dependsOn()` dependencies:
+    - Wave 0: `migration_agent` (scoped strictly to `database/migrations/**`).
+    - Wave 1: `model_eloquent_agent` (scoped strictly to `app/Models/**`, `app/Domains/**/Models/**`, `database/factories/**`).
+    - Wave 2: `seeder_agent` (scoped strictly to `database/seeders/**`).
+  - Automatically records generated database artifacts into `RunState::$artifacts` with sub-agent attribution and respects `--dry-run` non-destructive previews.
+- **Backend Pod:**
+  - `backend_agent` leads `request_validation_agent`, `service_action_agent`, and `controller_resource_agent`.
+  - Driven by dedicated skills: `laravel-form-requests-authorization`, `service-action-workflows`, and `controllers-resources-routes`.
+  - Executes sequentially in 3 distinct waves based on strict `dependsOn()` dependencies:
+    - Wave 0: `request_validation_agent` (scoped strictly to `app/Http/Requests/**`, `app/Policies/**`).
+    - Wave 1: `service_action_agent` (scoped strictly to `app/Services/**`, `app/Actions/**`, `app/Events/**`).
+    - Wave 2: `controller_resource_agent` (scoped strictly to `app/Http/Controllers/**`, `app/Http/Resources/**`, `routes/**`).
+  - Enforces thin controller design delegating to Action classes, wrapped with `JsonResource` transformers and clean `routes/api.php` endpoints.
+- **Quality, Docs & Release Pod:**
+  - `qa_agent` leads `feature_test_agent` and `fixer_agent`.
+    - Driven by `laravel-feature-testing` and `root-cause-test-fixing` skills.
+    - `feature_test_agent` generates complete Feature & Unit tests scoped strictly to `tests/**`.
+    - Executes `TestRunnerTool`; if tests fail and fix attempts remain, triggers `fixer_agent` for surgical root-cause debugging across `app/**`, `database/**`, `routes/**`, and `tests/**`.
+  - `reviewer_agent` leads `swagger_agent` and `git_agent`.
+    - Driven by `openapi-swagger-spec` and `safe-git-release` skills.
+    - If OpenAPI docs are enabled/requested, `swagger_agent` generates OpenAPI 3.0+ documentation in `docs/swagger.json`.
+    - Coordinates with `git_agent` to branch (`orcest/...`) and commit verified milestones upon review approval, honoring dry-run mode and Human-in-the-Loop review gates (`before_commit`).
 
 ---
 
@@ -653,6 +698,22 @@ return [
         ],
     ],
 
+    // Hierarchical Lead + Sub-Agent Teams (Pods)
+    'teams' => [
+        'enabled' => (bool) env('LARA_ORCEST_TEAMS_ENABLED', true),
+        'parallel_sub_agents' => (bool) env('LARA_ORCEST_PARALLEL_SUB_AGENTS', true),
+        'max_sub_agents_per_lead' => (int) env('LARA_ORCEST_MAX_SUB_AGENTS_PER_LEAD', 5),
+    ],
+
+    // Modular Agent Skills & Progressive Disclosure
+    'skills' => [
+        'enabled' => (bool) env('LARA_ORCEST_SKILLS_ENABLED', true),
+        'allow_custom' => (bool) env('LARA_ORCEST_ALLOW_CUSTOM_SKILLS', true),
+        'max_active_skills' => (int) env('LARA_ORCEST_MAX_ACTIVE_SKILLS', 5),
+        'path' => env('LARA_ORCEST_SKILLS_PATH', null),
+        'custom_path' => env('LARA_ORCEST_CUSTOM_SKILLS_PATH', '.lara-orcest/skills'),
+    ],
+
     // Swagger / OpenAPI documentation
     'swagger' => [
         'enabled' => (bool) env('LARA_ORCEST_SWAGGER_ENABLED', true),
@@ -718,13 +779,32 @@ return [
 
 ## Testing & Quality Assurance
 
-`LaraOrcest` is built with test-driven discipline and maintains 100% passing test suites:
+`LaraOrcest` is built with test-driven discipline and maintains 100% passing test suites across both Unit and Feature test suites.
+
+### Running Tests Locally
 
 ```bash
-# Run the complete test suite
+# Run the complete test suite via Composer script
+composer test
+
+# Run tests directly with PHPUnit
 ./vendor/bin/phpunit
-# OK (236 tests, 1207 assertions)
+
+# Run specific test suites
+composer test:unit
+composer test:feature
 ```
+
+All tests execute deterministically in isolated sandbox environments using `LARA_ORCEST_LLM=fake` and `LARA_ORCEST_CHECKPOINTER=json`, requiring **zero live LLM API keys** or external network requests.
+
+### Continuous Integration (GitHub Actions)
+
+Every `push` and `pull_request` to `main` triggers the automated CI pipeline ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)):
+- **PHP Matrix:** Validates compatibility across PHP `8.2`, `8.3`, and `8.4`.
+- **Composer Strictness:** Runs `composer validate --strict` and installs optimized dependencies with caching.
+- **Test Suite:** Executes 328 automated unit and feature tests with 1,940+ assertions.
+- **Docs Build Verification:** Verifies VitePress documentation site compilation (`npm run docs:build`) to catch broken links or invalid markdown before merging.
+- **GitHub Pages Deployment:** Verified documentation changes on `main` automatically deploy to GitHub Pages via [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
 
 ---
 

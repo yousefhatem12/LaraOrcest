@@ -208,7 +208,68 @@ LARA_ORCEST_MODEL_FIXER_AGENT=claude-3-5-sonnet-20241022
 
 # Specialized extraction model
 LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT=gpt-4o-mini
+
+# Sub-Agent overrides
+LARA_ORCEST_MODEL_DOMAIN_RULES_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_BACKLOG_SPLITTER_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_DDD_BOUNDARY_AGENT=claude-3-5-sonnet-20241022
+LARA_ORCEST_MODEL_SCHEMA_PLANNER_AGENT=claude-3-5-sonnet-20241022
+LARA_ORCEST_MODEL_API_CONTRACT_AGENT=claude-3-5-sonnet-20241022
+LARA_ORCEST_MODEL_MIGRATION_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_MODEL_ELOQUENT_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_SEEDER_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_REQUEST_VALIDATION_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_SERVICE_ACTION_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_CONTROLLER_RESOURCE_AGENT=gpt-4o-mini
+LARA_ORCEST_MODEL_FEATURE_TEST_AGENT=gpt-4o
 ```
+
+---
+
+## 3. Hierarchical Agent Pods & Sub-Agents
+
+When hierarchical teams are enabled (`lara-orcest.teams.enabled = true`), Lead Agents delegate specialized sub-tasks to helper sub-agents organized into 5 functional Pods:
+
+### 1. Discovery & Planning Pod
+- **Lead Agents:** `business_analyst`, `product_manager`
+- **Sub-Agents:**
+  - `domain_rules_agent` (`DomainRulesAgent`): Extracts domain invariants and state transitions.
+  - `backlog_splitter_agent` (`BacklogSplitterAgent`): Decomposes requirements into atomic tasks with explicit dependencies.
+  - `web_scraping_agent` (`WebScrapingSubAgent`): Extracts and normalizes structured data from two URLs.
+- **Assigned Skills:** `business-requirements-analysis`, `backlog-task-decomposition`, `two-site-scraping-dispatch`.
+
+### 2. Architecture Pod
+- **Lead Agent:** `architect`
+- **Sub-Agents:**
+  - `ddd_boundary_agent` (`DddBoundaryAgent`): Layered DDD context boundaries and multi-tenant invariants.
+  - `schema_planner_agent` (`SchemaPlannerAgent`): Relational schema tables, foreign keys, and indexes.
+  - `api_contract_agent` (`ApiContractAgent`): REST API contracts, routes, and JSON resource schemas.
+- **Assigned Skills:** `laravel-modular-ddd-architecture`, `relational-schema-indexing`, `rest-api-contract-design`.
+
+### 3. Database Pod
+- **Lead Agent:** `database_agent`
+- **Sub-Agents:**
+  - `migration_agent` (`MigrationAgent`, Wave 0): Anonymous migrations in `database/migrations/**`.
+  - `model_eloquent_agent` (`ModelEloquentAgent`, Wave 1): Eloquent models, relationships, and factories.
+  - `seeder_agent` (`SeederAgent`, Wave 2): Idempotent database seeders in `database/seeders/**`.
+- **Assigned Skills:** `laravel-safe-migrations`, `eloquent-models-and-factories`, `idempotent-database-seeders`.
+
+### 4. Backend Pod
+- **Lead Agent:** `backend_agent`
+- **Sub-Agents:**
+  - `request_validation_agent` (`RequestValidationAgent`, Wave 0): FormRequests and Policies.
+  - `service_action_agent` (`ServiceActionAgent`, Wave 1): Single-responsibility Actions and Services.
+  - `controller_resource_agent` (`ControllerResourceAgent`, Wave 2): Thin controllers and JsonResources.
+- **Assigned Skills:** `laravel-form-requests-authorization`, `service-action-workflows`, `controllers-resources-routes`.
+
+### 5. Quality, Docs & Release Pod
+- **Lead Agents:** `qa_agent`, `reviewer_agent`
+- **Sub-Agents:**
+  - `feature_test_agent` (`FeatureTestAgent`, Wave 0 under QA): Pest/PHPUnit feature and unit tests in `tests/**`.
+  - `fixer_agent` (`FixerSubAgent`, conditional retry under QA): Root-cause bug repairs across `app/**`, `database/**`, `routes/**`, `tests/**`.
+  - `swagger_agent` (`SwaggerSubAgent` under Reviewer): OpenAPI 3.0+ documentation in `docs/swagger.json`.
+  - `git_agent` (`GitSubAgent` under Reviewer): Milestone release branching (`orcest/...`) and clean commits.
+- **Assigned Skills:** `laravel-feature-testing`, `root-cause-test-fixing`, `openapi-swagger-spec`, `safe-git-release`.
 
 ### Model Resolution Hierarchy
 When an agent executes an LLM turn, `AbstractAgent::resolveModel()` evaluates configuration in the following order:
