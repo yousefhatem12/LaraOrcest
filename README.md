@@ -283,9 +283,40 @@ Natively organizes specialized agents into hierarchical Lead and Sub-Agent teams
 
 ## Installation & Setup
 
-### Local Package Development (Recommended for Testing)
+### 1. Standard Installation (via Composer & Packagist)
 
-1. Clone or place `LaraOrcest` alongside your Laravel test application:
+Install `LaraOrcest` into your Laravel application using Composer:
+
+```bash
+composer require yousef/lara-orcest
+```
+
+If you only plan to use LaraOrcest during local development and testing:
+
+```bash
+composer require yousef/lara-orcest --dev
+```
+
+### 2. Publish Configuration & Migrations
+
+Publish the package configuration file to `config/lara-orcest.php`:
+
+```bash
+php artisan vendor:publish --tag=lara-orcest-config
+```
+
+Publish checkpointer migrations for database persistence (optional, JSON filesystem is the default):
+
+```bash
+php artisan vendor:publish --tag=lara-orcest-migrations
+php artisan migrate
+```
+
+### 3. Local Development via Path Repository (Optional)
+
+If you are developing or testing `LaraOrcest` locally alongside your Laravel application:
+
+1. Clone or place `LaraOrcest` alongside your Laravel application:
    ```text
    projects/
    ├── my-laravel-app/
@@ -311,13 +342,6 @@ Natively organizes specialized agents into hierarchical Lead and Sub-Agent teams
 3. Update Composer dependencies in your Laravel app:
    ```bash
    composer update yousef/lara-orcest
-   ```
-
-4. Publish package configuration and database migration:
-   ```bash
-   php artisan vendor:publish --tag=lara-orcest-config
-   php artisan vendor:publish --tag=lara-orcest-migrations
-   php artisan migrate
    ```
 
 ---

@@ -18,9 +18,23 @@ Before installing LaraOrcest, verify that your environment meets the minimum req
 
 ---
 
-## 2. Local Setup via Composer `path` Repository
+## 2. Installation via Composer (Packagist)
 
-To link and develop with the local `LaraOrcest` repository during development, register it as a Composer `path` repository inside your Laravel application's `composer.json`:
+Install LaraOrcest into your Laravel application using Composer:
+
+```bash
+composer require yousef/lara-orcest
+```
+
+If you plan to use LaraOrcest exclusively for development, prototyping, and automated test generation:
+
+```bash
+composer require yousef/lara-orcest --dev
+```
+
+### Optional: Local Development via Composer `path` Repository
+
+If you are developing or contributing to `LaraOrcest` locally alongside your Laravel application, register it as a Composer `path` repository inside your Laravel app's `composer.json`:
 
 ```json
 {
@@ -41,16 +55,10 @@ To link and develop with the local `LaraOrcest` repository during development, r
 }
 ```
 
-Run `composer update` to install the package:
+Then run `composer update` to symlink the package:
 
 ```bash
 composer update yousef/lara-orcest
-```
-
-Once published to Packagist, standard installation requires only:
-
-```bash
-composer require yousef/lara-orcest --dev
 ```
 
 ---

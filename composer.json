@@ -13,10 +13,17 @@
     "langgraph",
     "llm"
   ],
+  "homepage": "https://github.com/yousefhatem12/LaraOrcest",
+  "support": {
+    "issues": "https://github.com/yousefhatem12/LaraOrcest/issues",
+    "source": "https://github.com/yousefhatem12/LaraOrcest",
+    "docs": "https://yousefhatem12.github.io/LaraOrcest/"
+  },
   "authors": [
     {
       "name": "Yousef Hatem",
-      "email": "yousefhatem01018048647@gmail.com"
+      "email": "yousefhatem01018048647@gmail.com",
+      "role": "Developer"
     }
   ],
   "require": {
