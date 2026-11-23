@@ -84,6 +84,12 @@ Welcome to the documentation for **LaraOrcest** (`yousef/lara-orcest`), an enter
 
 ---
 
+## Visual Architecture & Workflow Walkthrough
+
+<VideoExplainer />
+
+---
+
 ## Interactive Agent Pipeline
 
 <AgentFlowVisualizer />

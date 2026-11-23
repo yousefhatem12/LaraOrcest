@@ -24,6 +24,26 @@
 
 ---
 
+## 🎬 Video Overview (Silent Graphical Walkthrough)
+
+A concise 24-second silent explainer video demonstrating LaraOrcest's LangGraph-style stateful directed graph, 9 CrewAI-style pod roles, parallel wave execution, defense-in-depth security guardrails, and Artisan CLI workflows:
+
+<p align="center">
+  <video src="https://raw.githubusercontent.com/yousefhatem12/LaraOrcest/main/docs/public/videos/lara-orcest-overview.mp4" width="100%" controls muted playsinline poster="docs/public/logo.png">
+    <source src="docs/public/videos/lara-orcest-overview.mp4" type="video/mp4">
+    <source src="https://raw.githubusercontent.com/yousefhatem12/LaraOrcest/main/docs/public/videos/lara-orcest-overview.mp4" type="video/mp4">
+  </video>
+  <br>
+  <em>Silent graphical overview (no audio track) • 720p HD @ 30fps • 24s</em>
+  <br>
+  <a href="https://raw.githubusercontent.com/yousefhatem12/LaraOrcest/main/docs/public/videos/lara-orcest-overview.mp4">▶️ Direct MP4 Video</a> • <a href="https://yousefhatem12.github.io/LaraOrcest/">📖 Interactive Docs Site</a>
+</p>
+
+> [!NOTE]
+> This graphical walkthrough is intentionally silent (no audio track). You can also watch it with interactive chapters on the [LaraOrcest Documentation Site](https://yousefhatem12.github.io/LaraOrcest/).
+
+---
+
 ## 📚 Documentation & Guides
 
 Comprehensive guides and runnable examples are available in [`docs/`](docs/index.md) and [`examples/`](examples/):

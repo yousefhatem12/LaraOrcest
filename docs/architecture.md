@@ -26,6 +26,8 @@ LaraOrcest is architected as a modular, deterministic state graph framework tail
                                 └──────────────────────────────────────────────┘
 ```
 
+<VideoExplainer title="State Machine & Parallel Waves Architecture Video" />
+
 ---
 
 ## 2. Immutable State Container: `RunState`

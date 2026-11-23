@@ -8,6 +8,7 @@ import BlurRevealText from './components/BlurRevealText.vue'
 import SpotlightCard from './components/SpotlightCard.vue'
 import AgentFlowVisualizer from './components/AgentFlowVisualizer.vue'
 import AnimatedIcon from './components/AnimatedIcon.vue'
+import VideoExplainer from './components/VideoExplainer.vue'
 
 export default {
   extends: DefaultTheme,
@@ -19,5 +20,6 @@ export default {
     app.component('SpotlightCard', SpotlightCard)
     app.component('AgentFlowVisualizer', AgentFlowVisualizer)
     app.component('AnimatedIcon', AnimatedIcon)
+    app.component('VideoExplainer', VideoExplainer)
   }
 } satisfies Theme

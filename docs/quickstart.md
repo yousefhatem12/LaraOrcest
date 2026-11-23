@@ -2,6 +2,8 @@
 
 This guide walks you through setting up, configuring, and executing **LaraOrcest** (`yousef/lara-orcest`) inside a local Laravel application.
 
+<VideoExplainer title="Quickstart & Artisan CLI Workflow Walkthrough" />
+
 ---
 
 ## 1. Prerequisites
