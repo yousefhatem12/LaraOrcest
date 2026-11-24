@@ -2,7 +2,7 @@
 
 ## 1. Overview & Concept
 
-**Package:** `yousef/lara-orcest`\
+**Package:** `yousefhatem12/lara-orcest`\
 **Namespace:** `Yousef\LaraOrcest`\
 **Package type:** Standalone Laravel Composer package\
 **Purpose:** Bring prompt-driven, multi-agent orchestration into Laravel
@@ -52,7 +52,7 @@ path repository in the test application's `composer.json`:
     }
   ],
   "require": {
-    "yousef/lara-orcest": "*"
+    "yousefhatem12/lara-orcest": "*"
   }
 }
 ```

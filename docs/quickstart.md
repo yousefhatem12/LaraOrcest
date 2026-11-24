@@ -1,6 +1,6 @@
 # Quickstart Guide
 
-This guide walks you through setting up, configuring, and executing **LaraOrcest** (`yousef/lara-orcest`) inside a local Laravel application.
+This guide walks you through setting up, configuring, and executing **LaraOrcest** (`yousefhatem12/lara-orcest`) inside a local Laravel application.
 
 <VideoExplainer title="Quickstart & Artisan CLI Workflow Walkthrough" />
 
@@ -23,16 +23,18 @@ Before installing LaraOrcest, verify that your environment meets the minimum req
 Install LaraOrcest into your Laravel application using Composer:
 
 ```bash
-composer require yousef/lara-orcest
+composer require yousefhatem12/lara-orcest
 ```
 
 If you plan to use LaraOrcest exclusively for development, prototyping, and automated test generation:
 
 ```bash
-composer require yousef/lara-orcest --dev
+composer require yousefhatem12/lara-orcest --dev
 ```
 
-### Optional: Local Development via Composer `path` Repository
+### Pre-Release & Development Alternatives
+
+#### Option A: Local Development via Composer `path` Repository
 
 If you are developing or contributing to `LaraOrcest` locally alongside your Laravel application, register it as a Composer `path` repository inside your Laravel app's `composer.json`:
 
@@ -48,7 +50,7 @@ If you are developing or contributing to `LaraOrcest` locally alongside your Lar
         }
     ],
     "require-dev": {
-        "yousef/lara-orcest": "*@dev"
+        "yousefhatem12/lara-orcest": "*@dev"
     },
     "minimum-stability": "dev",
     "prefer-stable": true
@@ -58,7 +60,28 @@ If you are developing or contributing to `LaraOrcest` locally alongside your Lar
 Then run `composer update` to symlink the package:
 
 ```bash
-composer update yousef/lara-orcest
+composer update yousefhatem12/lara-orcest
+```
+
+#### Option B: Remote Branch Testing via Composer `vcs` Repository
+
+If you want to test the package directly from GitHub before its official Packagist release:
+
+```json
+{
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/yousefhatem12/LaraOrcest.git"
+        }
+    ]
+}
+```
+
+Then require the development branch:
+
+```bash
+composer require yousefhatem12/lara-orcest:dev-main --dev
 ```
 
 ---

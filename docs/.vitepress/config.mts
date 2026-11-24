@@ -50,7 +50,7 @@ export default defineConfig({
         items: [
           { text: 'Examples Directory', link: 'https://github.com/yousefhatem12/LaraOrcest/tree/main/examples' },
           { text: 'Technical Spec', link: 'https://github.com/yousefhatem12/LaraOrcest/blob/main/spec.md' },
-          { text: 'Packagist Package', link: 'https://packagist.org/packages/yousef/lara-orcest' }
+          { text: 'Packagist Package', link: 'https://packagist.org/packages/yousefhatem12/lara-orcest' }
         ]
       }
     ],

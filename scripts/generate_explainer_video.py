@@ -580,7 +580,7 @@ def render_scene_6(frame_in_scene):
     
     # Composer command block
     d.rounded_rectangle([col1_x + 30, cta_y + 48, col1_x + 580, cta_y + 98], radius=8, fill=(10, 14, 24), outline=COLOR_CARD_BORDER)
-    d.text((col1_x + 48, cta_y + 64), "$ composer require yousef/lara-orcest", font=font_mono_lg, fill=COLOR_CYAN)
+    d.text((col1_x + 48, cta_y + 64), "$ composer require yousefhatem12/lara-orcest", font=font_mono_lg, fill=COLOR_CYAN)
     
     # Docs link block
     d.rounded_rectangle([col1_x + 605, cta_y + 48, col1_x + cta_w - 30, cta_y + 98], radius=8, fill=(10, 14, 24), outline=COLOR_CARD_BORDER)

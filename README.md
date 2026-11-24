@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/yousefhatem12/LaraOrcest/actions/workflows/tests.yml"><img src="https://github.com/yousefhatem12/LaraOrcest/actions/workflows/tests.yml/badge.svg" alt="Tests Status"></a>
   <a href="https://github.com/yousefhatem12/LaraOrcest/actions/workflows/docs.yml"><img src="https://github.com/yousefhatem12/LaraOrcest/actions/workflows/docs.yml/badge.svg" alt="Docs Deployment"></a>
-  <a href="https://packagist.org/packages/yousef/lara-orcest"><img src="https://img.shields.io/packagist/v/yousef/lara-orcest.svg?style=flat-square" alt="Latest Version on Packagist"></a>
+  <a href="https://packagist.org/packages/yousefhatem12/lara-orcest"><img src="https://img.shields.io/packagist/v/yousefhatem12/lara-orcest.svg?style=flat-square" alt="Latest Version on Packagist"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="Software License"></a>
 </p>
 
@@ -288,13 +288,13 @@ Natively organizes specialized agents into hierarchical Lead and Sub-Agent teams
 Install `LaraOrcest` into your Laravel application using Composer:
 
 ```bash
-composer require yousef/lara-orcest
+composer require yousefhatem12/lara-orcest
 ```
 
 If you only plan to use LaraOrcest during local development and testing:
 
 ```bash
-composer require yousef/lara-orcest --dev
+composer require yousefhatem12/lara-orcest --dev
 ```
 
 ### 2. Publish Configuration & Migrations
@@ -312,37 +312,49 @@ php artisan vendor:publish --tag=lara-orcest-migrations
 php artisan migrate
 ```
 
-### 3. Local Development via Path Repository (Optional)
+### 3. Pre-Release & Local Development Alternatives
 
-If you are developing or testing `LaraOrcest` locally alongside your Laravel application:
+If you are developing against or testing `LaraOrcest` locally or before its initial Packagist index:
 
-1. Clone or place `LaraOrcest` alongside your Laravel application:
-   ```text
-   projects/
-   ├── my-laravel-app/
-   └── LaraOrcest/
-   ```
+#### Option A: Local Development via Composer `path` Repository
+Link a local clone of `LaraOrcest` on your machine using Composer's `path` repository inside your Laravel app's `composer.json`:
 
-2. Link `LaraOrcest` to your Laravel app via Composer's `path` repository in `my-laravel-app/composer.json`:
-   ```json
-   "repositories": [
-       {
-           "type": "path",
-           "url": "../LaraOrcest",
-           "options": {
-               "symlink": true
-           }
-       }
-   ],
-   "require": {
-       "yousef/lara-orcest": "*"
-   }
-   ```
+```json
+"repositories": [
+    {
+        "type": "path",
+        "url": "../LaraOrcest",
+        "options": {
+            "symlink": true
+        }
+    }
+],
+"require-dev": {
+    "yousefhatem12/lara-orcest": "*@dev"
+}
+```
 
-3. Update Composer dependencies in your Laravel app:
-   ```bash
-   composer update yousef/lara-orcest
-   ```
+Then update dependencies in your Laravel app:
+```bash
+composer update yousefhatem12/lara-orcest
+```
+
+#### Option B: GitHub VCS Repository (Branch / Dev-Main)
+Install directly from the GitHub repository via a Composer VCS repository before Packagist publication:
+
+```json
+"repositories": [
+    {
+        "type": "vcs",
+        "url": "https://github.com/yousefhatem12/LaraOrcest.git"
+    }
+]
+```
+
+Then require the branch with development stability:
+```bash
+composer require yousefhatem12/lara-orcest:dev-main --dev
+```
 
 ---
 

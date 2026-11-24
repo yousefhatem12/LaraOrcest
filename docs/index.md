@@ -54,7 +54,7 @@ features:
 
 # LaraOrcest Documentation
 
-Welcome to the documentation for **LaraOrcest** (`yousef/lara-orcest`), an enterprise-grade, prompt-driven multi-agent orchestration framework built exclusively for Laravel.
+Welcome to the documentation for **LaraOrcest** (`yousefhatem12/lara-orcest`), an enterprise-grade, prompt-driven multi-agent orchestration framework built exclusively for Laravel.
 
 <AuroraHero>
   <template #badge>

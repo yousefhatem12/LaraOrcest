@@ -1,5 +1,5 @@
 {
-  "name": "yousef/lara-orcest",
+  "name": "yousefhatem12/lara-orcest",
   "description": "Prompt-driven multi-agent orchestration for Laravel with specialized roles, stateful graph execution, automated tests, and safe Git workflows.",
   "type": "library",
   "license": "MIT",
