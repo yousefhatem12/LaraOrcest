@@ -10,6 +10,7 @@ use Yousef\LaraOrcest\Agents\BusinessAnalystAgent;
 use Yousef\LaraOrcest\Agents\DatabaseAgent;
 use Yousef\LaraOrcest\Agents\FixerAgent;
 use Yousef\LaraOrcest\Agents\GitAgent;
+use Yousef\LaraOrcest\Agents\PackageManagerAgent;
 use Yousef\LaraOrcest\Agents\ProductManagerAgent;
 use Yousef\LaraOrcest\Agents\QaAgent;
 use Yousef\LaraOrcest\Agents\ReviewerAgent;
@@ -22,12 +23,16 @@ use Yousef\LaraOrcest\Graph\Nodes\AgentGraphNode;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Tools\ArtisanRunnerTool;
 use Yousef\LaraOrcest\Tools\CodebaseInspectorTool;
+use Yousef\LaraOrcest\Tools\ComposerRunnerTool;
+use Yousef\LaraOrcest\Tools\DirectoryScaffolderTool;
 use Yousef\LaraOrcest\Tools\FileReaderTool;
 use Yousef\LaraOrcest\Tools\GitCommandTool;
 use Yousef\LaraOrcest\Tools\HttpDispatchTool;
 use Yousef\LaraOrcest\Tools\HttpFetchTool;
 use Yousef\LaraOrcest\Tools\PatchWriterTool;
+use Yousef\LaraOrcest\Tools\Support\PathGuard;
 use Yousef\LaraOrcest\Tools\TestRunnerTool;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class DefaultGraphBuilder
 {
@@ -39,11 +44,15 @@ class DefaultGraphBuilder
         ?CheckpointerContract $checkpointer = null,
         ?array $tools = null,
         bool $withScraper = false,
-        bool $withSwagger = false
+        bool $withSwagger = false,
+        ?WorkspaceContext $workspaceContext = null,
+        bool $withPackageManager = false
     ): GraphEngine {
-        $engine = new GraphEngine($checkpointer);
+        $engine = new GraphEngine($checkpointer, $workspaceContext);
 
-        $tools = $tools ?: self::defaultTools();
+        $tools = $tools ?: self::defaultTools($workspaceContext);
+
+        $packageManagerEnabled = $withPackageManager;
 
         // 1. Instantiate built-in agents
         $agents = [
@@ -57,6 +66,10 @@ class DefaultGraphBuilder
             new FixerAgent(),
             new ReviewerAgent(),
         ];
+
+        if ($packageManagerEnabled) {
+            $agents[] = new PackageManagerAgent();
+        }
 
         if ($withScraper) {
             $agents[] = new WebScrapingAgent();
@@ -87,7 +100,15 @@ class DefaultGraphBuilder
         }
 
         $engine->addEdge('architect', 'git_agent');
-        $engine->addEdge('git_agent', 'database_agent');
+
+        if ($packageManagerEnabled) {
+            $engine->addEdge('git_agent', 'package_manager_agent', fn (RunState $s) => $s->shouldRunPackageManager(), 20);
+            $engine->addEdge('git_agent', 'database_agent', fn (RunState $s) => ! $s->shouldRunPackageManager(), 10);
+            $engine->addEdge('package_manager_agent', 'database_agent');
+        } else {
+            $engine->addEdge('git_agent', 'database_agent');
+        }
+
         $engine->addEdge('database_agent', 'backend_agent');
 
         if ($withSwagger) {
@@ -129,10 +150,11 @@ class DefaultGraphBuilder
     public static function buildScrapingPipeline(
         LlmDriverContract $llm,
         ?CheckpointerContract $checkpointer = null,
-        ?array $tools = null
+        ?array $tools = null,
+        ?WorkspaceContext $workspaceContext = null
     ): GraphEngine {
-        $engine = new GraphEngine($checkpointer);
-        $tools = $tools ?: self::defaultTools();
+        $engine = new GraphEngine($checkpointer, $workspaceContext);
+        $tools = $tools ?: self::defaultTools($workspaceContext);
 
         $agents = [
             new BusinessAnalystAgent(),
@@ -160,10 +182,11 @@ class DefaultGraphBuilder
     public static function buildSwaggerPipeline(
         LlmDriverContract $llm,
         ?CheckpointerContract $checkpointer = null,
-        ?array $tools = null
+        ?array $tools = null,
+        ?WorkspaceContext $workspaceContext = null
     ): GraphEngine {
-        $engine = new GraphEngine($checkpointer);
-        $tools = $tools ?: self::defaultTools();
+        $engine = new GraphEngine($checkpointer, $workspaceContext);
+        $tools = $tools ?: self::defaultTools($workspaceContext);
 
         $agents = [
             new BackendAgent(),
@@ -181,19 +204,49 @@ class DefaultGraphBuilder
     }
 
     /**
+     * Builds a dedicated standalone package manager & project bootstrapping pipeline:
+     * package_manager_agent -> TERMINAL_COMPLETED
+     *
+     * @param  array<string, ToolContract>|null  $tools
+     */
+    public static function buildPackageManagerPipeline(
+        LlmDriverContract $llm,
+        ?CheckpointerContract $checkpointer = null,
+        ?array $tools = null,
+        ?WorkspaceContext $workspaceContext = null
+    ): GraphEngine {
+        $engine = new GraphEngine($checkpointer, $workspaceContext);
+        $tools = $tools ?: self::defaultTools($workspaceContext);
+
+        $agent = new PackageManagerAgent();
+        $engine->addNode(new AgentGraphNode($agent, $tools, $llm, $checkpointer));
+        $engine->addEdge('package_manager_agent', GraphEngine::TERMINAL_COMPLETED);
+
+        return $engine;
+    }
+
+    /**
      * @return array<string, ToolContract>
      */
-    public static function defaultTools(): array
+    public static function defaultTools(?WorkspaceContext $workspaceContext = null): array
     {
+        if ($workspaceContext !== null) {
+            return $workspaceContext->createTools();
+        }
+
+        $pathGuard = new PathGuard();
+
         return [
-            'file_reader' => new FileReaderTool(),
-            'patch_writer' => new PatchWriterTool(),
+            'file_reader' => new FileReaderTool(pathGuard: $pathGuard),
+            'patch_writer' => new PatchWriterTool(pathGuard: $pathGuard),
             'artisan_runner' => new ArtisanRunnerTool(),
             'test_runner' => new TestRunnerTool(),
-            'git_command' => new GitCommandTool(),
+            'git_command' => new GitCommandTool(pathGuard: $pathGuard),
             'http_fetch' => new HttpFetchTool(),
             'http_dispatch' => new HttpDispatchTool(),
-            'codebase_inspector' => new CodebaseInspectorTool(),
+            'codebase_inspector' => new CodebaseInspectorTool(pathGuard: $pathGuard),
+            'composer_runner' => new ComposerRunnerTool(),
+            'directory_scaffolder' => new DirectoryScaffolderTool(pathGuard: $pathGuard),
         ];
     }
 }

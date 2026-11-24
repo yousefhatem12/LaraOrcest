@@ -61,6 +61,8 @@ class ReviewerAgent extends AbstractAgent
                         'artifacts' => $state->artifacts,
                         'reviews' => $state->reviews,
                         'prompt' => $state->prompt,
+                        'target_project_path' => $state->targetProjectPath,
+                        'workspace_mode' => $state->workspaceMode,
                     ];
 
                     $delegationResult = $this->delegateSubTasks(
@@ -87,6 +89,8 @@ class ReviewerAgent extends AbstractAgent
                         'run_id' => $state->runId,
                         'artifacts' => $state->artifacts,
                         'reviews' => $state->reviews,
+                        'target_project_path' => $state->targetProjectPath,
+                        'workspace_mode' => $state->workspaceMode,
                     ];
 
                     $delegationResult = $this->delegateSubTasks(

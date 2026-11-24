@@ -11,6 +11,7 @@ use Yousef\LaraOrcest\Contracts\AgentContract;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Skills\Skill;
 use Yousef\LaraOrcest\Tools\Support\PathGuard;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class ToolRegistry
 {
@@ -19,10 +20,14 @@ class ToolRegistry
      */
     protected array $tools = [];
 
+    protected ?WorkspaceContext $workspaceContext = null;
+
     public function __construct(
-        protected ?PathGuard $pathGuard = null
+        protected ?PathGuard $pathGuard = null,
+        ?WorkspaceContext $workspaceContext = null
     ) {
-        $this->pathGuard = $pathGuard ?: new PathGuard();
+        $this->workspaceContext = $workspaceContext;
+        $this->pathGuard = $pathGuard ?: ($workspaceContext ? $workspaceContext->createPathGuard() : new PathGuard());
     }
 
     /**
@@ -135,9 +140,17 @@ class ToolRegistry
 
         // If active skill(s) define allowed_tools, filter against them
         $skillsList = is_array($activeSkill) ? $activeSkill : ($activeSkill !== null ? [$activeSkill] : []);
-        foreach ($skillsList as $sk) {
-            if ($sk instanceof Skill && ! empty($sk->allowedTools) && ! in_array('*', $sk->allowedTools, true)) {
-                $allowedTools = array_values(array_filter($allowedTools, fn ($toolName) => $sk->permitsTool($toolName)));
+        if (! empty($skillsList)) {
+            $skillAllowedTools = [];
+            $hasRestrictingSkill = false;
+            foreach ($skillsList as $sk) {
+                if ($sk instanceof Skill && ! empty($sk->allowedTools) && ! in_array('*', $sk->allowedTools, true)) {
+                    $hasRestrictingSkill = true;
+                    $skillAllowedTools = array_unique(array_merge($skillAllowedTools, $sk->allowedTools));
+                }
+            }
+            if ($hasRestrictingSkill) {
+                $allowedTools = array_values(array_filter($allowedTools, fn ($toolName) => in_array($toolName, $skillAllowedTools, true)));
             }
         }
 
@@ -150,12 +163,16 @@ class ToolRegistry
                 continue;
             }
 
+            $toolGuard = method_exists($tool, 'getPathGuard') && $tool->getPathGuard() instanceof PathGuard
+                ? $tool->getPathGuard()
+                : $this->pathGuard;
+
             // Wrap with ScopedToolProxy if scopePaths are defined
             if (! empty($effectiveScopePaths)) {
                 $resolved[$toolName] = new ScopedToolProxy(
                     tool: $tool,
                     scopePaths: $effectiveScopePaths,
-                    pathGuard: $this->pathGuard
+                    pathGuard: $toolGuard
                 );
             } else {
                 $resolved[$toolName] = $tool;
@@ -200,6 +217,10 @@ class ToolRegistry
             'git_agent' => ['git_command', 'file_reader'],
             'reviewer_agent' => ['file_reader', 'git_command', 'patch_writer', 'artisan_runner'],
             'swagger_agent' => ['file_reader', 'patch_writer', 'artisan_runner'],
+            'package_manager_agent' => ['composer_runner', 'directory_scaffolder', 'file_reader', 'patch_writer', 'codebase_inspector', 'artisan_runner'],
+            'laravel_installer_agent' => ['composer_runner', 'file_reader', 'patch_writer', 'artisan_runner', 'codebase_inspector'],
+            'dependency_resolver_agent' => ['composer_runner', 'file_reader'],
+            'structure_scaffolder_agent' => ['directory_scaffolder', 'patch_writer', 'file_reader', 'codebase_inspector'],
         ];
 
         if (isset($defaults[$normalized])) {

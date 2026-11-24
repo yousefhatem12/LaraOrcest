@@ -120,7 +120,11 @@ class GitSubAgent extends AbstractSubAgent
 
             // If not already on the feature branch, create it
             if (($current['branch'] ?? '') !== $proposedBranch) {
-                $createRes = $gitTool->createBranch($proposedBranch);
+                try {
+                    $createRes = $gitTool->createBranch($proposedBranch, true);
+                } catch (\ArgumentCountError) {
+                    $createRes = $gitTool->createBranch($proposedBranch);
+                }
                 $featureBranch = $createRes['branch'] ?? $proposedBranch;
                 $branchCreated = (bool) ($createRes['created'] ?? false);
             }
@@ -134,7 +138,11 @@ class GitSubAgent extends AbstractSubAgent
         // If commit message provided, stage files and commit
         if ($commitMessage !== '') {
             try {
-                $gitTool->execute(['action' => 'stage_files', 'files' => []]);
+                $artifactPaths = array_column($state->artifacts, 'path');
+                $filesToStage = ! empty($artifactPaths) ? $artifactPaths : (array) ($output['files'] ?? []);
+                if (! empty($filesToStage)) {
+                    $gitTool->execute(['action' => 'stage_files', 'files' => $filesToStage]);
+                }
                 $commitResult = $gitTool->execute(['action' => 'commit', 'message' => $commitMessage]);
             } catch (\Throwable) {
                 // If staging/commit fails (e.g. working tree clean), proceed gracefully

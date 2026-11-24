@@ -14,6 +14,45 @@ class SubAgentRegistry
     protected array $subAgents = [];
 
     /**
+     * Create a new SubAgentRegistry loaded with all built-in sub-agents.
+     */
+    public static function createDefault(): self
+    {
+        $registry = new self();
+        $registry->registerDefaults();
+
+        return $registry;
+    }
+
+    /**
+     * Registers all standard built-in sub-agents across all pods.
+     */
+    public function registerDefaults(): self
+    {
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\DomainRulesAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\BacklogSplitterAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\WebScrapingSubAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\DddBoundaryAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\SchemaPlannerAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\ApiContractAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\MigrationAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\ModelEloquentAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\SeederAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\RequestValidationAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\ServiceActionAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\ControllerResourceAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\FeatureTestAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\FixerSubAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\SwaggerSubAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\GitSubAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\LaravelInstallerAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\DependencyResolverAgent());
+        $this->register(new \Yousef\LaraOrcest\Agents\SubAgents\StructureScaffolderAgent());
+
+        return $this;
+    }
+
+    /**
      * Register a sub-agent instance.
      */
     public function register(SubAgentInterface $subAgent): self

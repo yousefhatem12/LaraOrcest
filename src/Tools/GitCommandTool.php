@@ -11,6 +11,7 @@ use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Support\Config;
 use Yousef\LaraOrcest\Tools\Support\PathGuard;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class GitCommandTool implements ToolContract
 {
@@ -24,6 +25,8 @@ class GitCommandTool implements ToolContract
     protected bool $dryRun;
 
     protected PathGuard $pathGuard;
+
+    protected ?WorkspaceContext $workspaceContext = null;
 
     /**
      * @var array<int, string>
@@ -44,12 +47,16 @@ class GitCommandTool implements ToolContract
         ?string $projectRoot = null,
         ?array $protectedBranches = null,
         bool $dryRun = false,
-        ?PathGuard $pathGuard = null
+        ?PathGuard $pathGuard = null,
+        ?WorkspaceContext $workspaceContext = null
     ) {
-        $this->projectRoot = $projectRoot ?: Config::basePath();
-        $this->protectedBranches = $protectedBranches ?: (array) Config::get('lara-orcest.git.protected_branches', ['main', 'master', 'production', 'staging']);
+        $this->workspaceContext = $workspaceContext;
+        $this->projectRoot = $projectRoot ?: ($workspaceContext?->getTargetProjectPath() ?: Config::basePath());
+        $configuredProtected = $workspaceContext?->getConfig()->get('git.protected_branches')
+            ?: Config::get('lara-orcest.git.protected_branches', ['main', 'master', 'production', 'staging']);
+        $this->protectedBranches = $protectedBranches ?: (array) $configuredProtected;
         $this->dryRun = $dryRun;
-        $this->pathGuard = $pathGuard ?: new PathGuard($this->projectRoot);
+        $this->pathGuard = $pathGuard ?: ($workspaceContext ? $workspaceContext->createPathGuard() : new PathGuard($this->projectRoot));
     }
 
     public function getName(): string
@@ -74,6 +81,108 @@ class GitCommandTool implements ToolContract
         return $this->dryRun;
     }
 
+    public function getWorkspaceContext(): ?WorkspaceContext
+    {
+        return $this->workspaceContext;
+    }
+
+    public function setWorkspaceContext(WorkspaceContext $context): self
+    {
+        $this->workspaceContext = $context;
+        $this->projectRoot = $context->getTargetProjectPath();
+        $this->pathGuard = $context->createPathGuard();
+
+        return $this;
+    }
+
+    public function getProjectRoot(): string
+    {
+        return $this->projectRoot;
+    }
+
+    public function setProjectRoot(string $projectRoot): self
+    {
+        $this->projectRoot = $projectRoot;
+
+        return $this;
+    }
+
+    public function getPathGuard(): PathGuard
+    {
+        return $this->pathGuard;
+    }
+
+    public function isGitRepository(): bool
+    {
+        return is_dir($this->projectRoot . DIRECTORY_SEPARATOR . '.git');
+    }
+
+    public function initRepository(?string $defaultBranch = 'main'): array
+    {
+        $branch = $defaultBranch && trim($defaultBranch) !== '' ? trim($defaultBranch) : 'main';
+
+        if ($this->dryRun) {
+            return [
+                'initialized' => true,
+                'branch' => $branch,
+                'dry_run' => true,
+            ];
+        }
+
+        if ($this->isGitRepository()) {
+            return [
+                'initialized' => false,
+                'already_exists' => true,
+                'branch' => $this->getCurrentBranch()['branch'] ?? $branch,
+                'dry_run' => false,
+            ];
+        }
+
+        $initCmd = ['init'];
+        if ($branch !== '') {
+            $initCmd[] = '-b';
+            $initCmd[] = $branch;
+        }
+
+        $this->runGit($initCmd);
+
+        // Best effort: configure minimal commit user/email if missing
+        try {
+            $checkEmail = $this->runGit(['config', 'user.email'], false);
+            if (! $checkEmail->isSuccessful() || trim($checkEmail->getOutput()) === '') {
+                $this->runGit(['config', 'user.email', 'lara-orcest@local']);
+            }
+            $checkName = $this->runGit(['config', 'user.name'], false);
+            if (! $checkName->isSuccessful() || trim($checkName->getOutput()) === '') {
+                $this->runGit(['config', 'user.name', 'LaraOrcest']);
+            }
+        } catch (\Throwable) {
+            // Ignore best-effort config failure
+        }
+
+        return [
+            'initialized' => true,
+            'branch' => $branch,
+            'dry_run' => false,
+        ];
+    }
+
+    protected function ensureGitRepository(): void
+    {
+        if ($this->dryRun || $this->isGitRepository()) {
+            return;
+        }
+
+        $autoInit = (bool) ($this->workspaceContext?->getConfig()->get('git.auto_init')
+            ?: Config::get('lara-orcest.git.auto_init', true));
+
+        if ($autoInit) {
+            $this->initRepository();
+        } else {
+            throw new RuntimeException("Target directory [{$this->projectRoot}] is not a Git repository. Run 'git init' or enable git.auto_init.");
+        }
+    }
+
     public function getSchema(): array
     {
         return [
@@ -81,7 +190,7 @@ class GitCommandTool implements ToolContract
             'properties' => [
                 'action' => [
                     'type' => 'string',
-                    'enum' => ['status', 'current_branch', 'branch', 'create_branch', 'diff', 'stage_files', 'add', 'commit'],
+                    'enum' => ['status', 'current_branch', 'branch', 'create_branch', 'diff', 'stage_files', 'add', 'commit', 'init'],
                     'description' => 'Safe Git operation to execute.',
                 ],
                 'branch' => [
@@ -118,6 +227,7 @@ class GitCommandTool implements ToolContract
         }
 
         return match ($action) {
+            'init' => $this->initRepository((string) ($params['branch'] ?? 'main')),
             'status' => $this->getStatus(),
             'current_branch' => $this->getCurrentBranch(),
             'branch' => $this->listBranches(),
@@ -185,12 +295,18 @@ class GitCommandTool implements ToolContract
             ];
         }
 
+        $this->ensureGitRepository();
+
         $process = $this->runGit(['status', '--porcelain', '-b']);
         $lines = explode("\n", trim($process->getOutput()));
 
         $branchLine = array_shift($lines) ?: '## unknown';
-        $currentBranch = str_replace(['## ', '...'], ' ', $branchLine);
-        $currentBranch = explode(' ', trim($currentBranch))[0];
+        if (preg_match('/##\s+(?:No commits yet on\s+|Initial commit on\s+)?([^\s\.]+)/', $branchLine, $matches)) {
+            $currentBranch = $matches[1];
+        } else {
+            $currentBranch = str_replace(['## ', '...'], ' ', $branchLine);
+            $currentBranch = explode(' ', trim($currentBranch))[0];
+        }
 
         $modified = [];
         $untracked = [];
@@ -225,8 +341,25 @@ class GitCommandTool implements ToolContract
             return ['branch' => 'dry-run-branch', 'dry_run' => true];
         }
 
-        $process = $this->runGit(['rev-parse', '--abbrev-ref', 'HEAD']);
+        $this->ensureGitRepository();
+
+        $process = $this->runGit(['branch', '--show-current'], false);
         $branch = trim($process->getOutput());
+
+        if ($branch === '') {
+            $process = $this->runGit(['rev-parse', '--abbrev-ref', 'HEAD'], false);
+            $branch = trim($process->getOutput());
+        }
+
+        if ($branch === '' || str_starts_with($branch, 'fatal:') || str_starts_with($branch, 'error:')) {
+            $statusProc = $this->runGit(['status', '--porcelain', '-b'], false);
+            $output = trim($statusProc->getOutput());
+            if (preg_match('/##\s+(?:No commits yet on\s+|Initial commit on\s+)?([^\s\.]+)/', $output, $matches)) {
+                $branch = $matches[1];
+            } else {
+                $branch = 'main';
+            }
+        }
 
         return ['branch' => $branch, 'dry_run' => false];
     }
@@ -240,6 +373,8 @@ class GitCommandTool implements ToolContract
                 'dry_run' => true,
             ];
         }
+
+        $this->ensureGitRepository();
 
         $process = $this->runGit(['branch', '--list']);
         $lines = explode("\n", trim($process->getOutput()));
@@ -319,6 +454,8 @@ class GitCommandTool implements ToolContract
             return ['diff' => '[DRY-RUN] No disk diff available', 'dry_run' => true];
         }
 
+        $this->ensureGitRepository();
+
         $process = $this->runGit(['diff', 'HEAD']);
 
         return [
@@ -347,6 +484,8 @@ class GitCommandTool implements ToolContract
                     'dry_run' => true,
                 ];
             }
+
+            $this->ensureGitRepository();
 
             $this->runGit(['add', '--', ...$safeFiles]);
 

@@ -8,6 +8,7 @@ use Yousef\LaraOrcest\Contracts\ProjectMemoryContract;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Support\Config;
 use Yousef\LaraOrcest\Tools\Support\PathGuard;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class ProjectMemoryStore implements ProjectMemoryContract
 {
@@ -28,30 +29,39 @@ class ProjectMemoryStore implements ProjectMemoryContract
 
     protected PathGuard $pathGuard;
 
+    protected ?WorkspaceContext $workspaceContext = null;
+
     public function __construct(
         ?string $path = null,
         ?PathGuard $pathGuard = null,
         ?bool $enabled = null,
         ?int $maxContextChars = null,
         ?int $maxItems = null,
-        ?bool $autoIndex = null
+        ?bool $autoIndex = null,
+        ?WorkspaceContext $workspaceContext = null
     ) {
-        $this->pathGuard = $pathGuard ?: new PathGuard();
+        $this->workspaceContext = $workspaceContext;
+        $this->pathGuard = $pathGuard ?: ($workspaceContext ? $workspaceContext->createPathGuard() : new PathGuard());
 
-        $configuredEnabled = Config::get('lara-orcest.memory.enabled');
+        $configuredEnabled = $workspaceContext?->getConfig()->get('memory.enabled')
+            ?: Config::get('lara-orcest.memory.enabled');
         $this->enabled = $enabled ?? ($configuredEnabled !== null ? (bool) $configuredEnabled : true);
 
-        $configuredPath = Config::get('lara-orcest.memory.path');
-        $rawPath = $path ?? ($configuredPath ? (string) $configuredPath : '.lara-orcest/memory.json');
+        $configuredPath = $workspaceContext?->getConfig()->get('memory.path')
+            ?: Config::get('lara-orcest.memory.path');
+        $rawPath = $path ?? ($configuredPath ? (string) $configuredPath : ($workspaceContext ? $workspaceContext->getMemoryPath() : '.lara-orcest/memory.json'));
         $this->filePath = $this->resolveSafeFilePath($rawPath);
 
-        $configuredMaxChars = Config::get('lara-orcest.memory.max_context_chars');
+        $configuredMaxChars = $workspaceContext?->getConfig()->get('memory.max_context_chars')
+            ?: Config::get('lara-orcest.memory.max_context_chars');
         $this->maxContextChars = $maxContextChars ?? ($configuredMaxChars ? (int) $configuredMaxChars : 2500);
 
-        $configuredMaxItems = Config::get('lara-orcest.memory.max_items');
+        $configuredMaxItems = $workspaceContext?->getConfig()->get('memory.max_items')
+            ?: Config::get('lara-orcest.memory.max_items');
         $this->maxItems = $maxItems ?? ($configuredMaxItems ? (int) $configuredMaxItems : 15);
 
-        $configuredAutoIndex = Config::get('lara-orcest.memory.auto_index');
+        $configuredAutoIndex = $workspaceContext?->getConfig()->get('memory.auto_index')
+            ?: Config::get('lara-orcest.memory.auto_index');
         $this->autoIndex = $autoIndex ?? ($configuredAutoIndex !== null ? (bool) $configuredAutoIndex : true);
     }
 

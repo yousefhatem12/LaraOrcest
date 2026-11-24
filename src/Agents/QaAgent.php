@@ -59,6 +59,9 @@ class QaAgent extends AbstractAgent
                         'technical_plan' => $state->technicalPlan,
                         'artifacts' => $state->artifacts,
                         'prompt' => $state->prompt,
+                        'target_project_path' => $state->targetProjectPath,
+                        'workspace_mode' => $state->workspaceMode,
+                        'project_memory' => $this->resolveProjectMemoryContext($state),
                     ],
                     tools: $tools,
                     llm: $llm,
@@ -83,7 +86,9 @@ class QaAgent extends AbstractAgent
                 );
 
                 // 3. If tests failed and fixing is allowed and fixer_agent registered, trigger fix loop
-                if (! $state->areTestsPassing() && ! $state->isDryRun() && $state->canAttemptFix() && $subRegistry->has('fixer_agent')) {
+                // (Only when fix loop is not managed by an outer GraphEngine that contains a dedicated fixer_agent node)
+                $graphFixerLoop = (bool) ($state->metadata['graph_fixer_loop'] ?? false);
+                if (! $graphFixerLoop && ! $state->areTestsPassing() && ! $state->isDryRun() && $state->canAttemptFix() && $subRegistry->has('fixer_agent')) {
                     $state = $state->incrementFixAttempts();
 
                     $fixDelegation = $this->delegateSubTasks(
@@ -95,6 +100,10 @@ class QaAgent extends AbstractAgent
                             'artifacts' => $state->artifacts,
                             'requirements_spec' => $state->requirementsSpec,
                             'backlog' => $state->backlog,
+                            'technical_plan' => $state->technicalPlan,
+                            'target_project_path' => $state->targetProjectPath,
+                            'workspace_mode' => $state->workspaceMode,
+                            'project_memory' => $this->resolveProjectMemoryContext($state),
                         ],
                         tools: $tools,
                         llm: $llm,

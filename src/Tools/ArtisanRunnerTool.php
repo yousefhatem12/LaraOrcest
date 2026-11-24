@@ -9,6 +9,7 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class ArtisanRunnerTool implements ToolContract
 {
@@ -22,6 +23,8 @@ class ArtisanRunnerTool implements ToolContract
     protected int $timeout;
 
     protected bool $dryRun;
+
+    protected ?WorkspaceContext $workspaceContext = null;
 
     /**
      * Dangerous flags that are strictly forbidden.
@@ -42,9 +45,11 @@ class ArtisanRunnerTool implements ToolContract
         ?string $projectRoot = null,
         ?array $allowedCommands = null,
         int $timeout = 120,
-        bool $dryRun = false
+        bool $dryRun = false,
+        ?WorkspaceContext $workspaceContext = null
     ) {
-        $this->projectRoot = $projectRoot ?: Config::basePath();
+        $this->workspaceContext = $workspaceContext;
+        $this->projectRoot = $projectRoot ?: ($workspaceContext?->getTargetProjectPath() ?: Config::basePath());
 
         $defaultCommands = [
             'make:migration',
@@ -66,14 +71,18 @@ class ArtisanRunnerTool implements ToolContract
             'test',
         ];
 
-        $configuredCommands = Config::get(
+        $configuredCommands = $workspaceContext?->getConfig()->get(
+            'tools.allowed_artisan_commands',
+            $workspaceContext?->getConfig()->get('sandbox.allowed_artisan_commands')
+        ) ?: Config::get(
             'lara-orcest.tools.allowed_artisan_commands',
             Config::get('lara-orcest.sandbox.allowed_artisan_commands')
         );
 
         $this->allowedCommands = $allowedCommands ?: (array) ($configuredCommands ?: $defaultCommands);
 
-        $configuredTimeout = Config::get('lara-orcest.tools.process_timeout');
+        $configuredTimeout = $workspaceContext?->getConfig()->get('tools.process_timeout')
+            ?: Config::get('lara-orcest.tools.process_timeout');
         $this->timeout = $configuredTimeout ? (int) $configuredTimeout : $timeout;
 
         $this->dryRun = $dryRun;
@@ -99,6 +108,48 @@ class ArtisanRunnerTool implements ToolContract
     public function isDryRun(): bool
     {
         return $this->dryRun;
+    }
+
+    public function getWorkspaceContext(): ?WorkspaceContext
+    {
+        return $this->workspaceContext;
+    }
+
+    public function setWorkspaceContext(WorkspaceContext $context): self
+    {
+        $this->workspaceContext = $context;
+        $this->projectRoot = $context->getTargetProjectPath();
+
+        return $this;
+    }
+
+    public function getProjectRoot(): string
+    {
+        return $this->projectRoot;
+    }
+
+    public function setProjectRoot(string $projectRoot): self
+    {
+        $this->projectRoot = $projectRoot;
+
+        return $this;
+    }
+
+    public function getArtisanBinaryPath(): string
+    {
+        return $this->projectRoot . DIRECTORY_SEPARATOR . 'artisan';
+    }
+
+    public function hasArtisanBinary(): bool
+    {
+        return file_exists($this->getArtisanBinaryPath());
+    }
+
+    public function validateArtisanBinary(): void
+    {
+        if (! $this->hasArtisanBinary()) {
+            throw new RuntimeException("Artisan binary not found at [{$this->getArtisanBinaryPath()}]. Target path must be an initialized Laravel project.");
+        }
     }
 
     public function getAllowedCommands(): array
@@ -156,6 +207,17 @@ class ArtisanRunnerTool implements ToolContract
                 'output' => "[DRY-RUN] Simulated execution: php artisan {$command} " . implode(' ', $arguments),
                 'successful' => true,
                 'dry_run' => true,
+            ];
+        }
+
+        if (! $this->hasArtisanBinary()) {
+            return [
+                'command' => $command,
+                'arguments' => $arguments,
+                'exit_code' => 127,
+                'output' => "Artisan binary not found at [{$this->getArtisanBinaryPath()}]. Target path must be an initialized Laravel project.",
+                'successful' => false,
+                'dry_run' => false,
             ];
         }
 

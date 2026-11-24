@@ -7,6 +7,7 @@ namespace Yousef\LaraOrcest\LLM\Drivers;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
+use Yousef\LaraOrcest\Support\Config;
 
 class OllamaDriver implements LlmDriverContract
 {
@@ -15,9 +16,9 @@ class OllamaDriver implements LlmDriverContract
         protected string $model = 'llama3.3:latest',
         protected int $timeout = 120
     ) {
-        $this->baseUrl = function_exists('config') ? (string) config('lara-orcest.llm.providers.ollama.base_url', $this->baseUrl) : $this->baseUrl;
-        $this->model = function_exists('config') ? (string) config('lara-orcest.llm.providers.ollama.model', $this->model) : $this->model;
-        $this->timeout = function_exists('config') ? (int) config('lara-orcest.llm.timeout', $this->timeout) : $this->timeout;
+        $this->baseUrl = (string) Config::get('lara-orcest.llm.providers.ollama.base_url', $this->baseUrl);
+        $this->model = (string) Config::get('lara-orcest.llm.providers.ollama.model', $this->model);
+        $this->timeout = (int) Config::get('lara-orcest.llm.timeout', $this->timeout);
     }
 
     public function getName(): string

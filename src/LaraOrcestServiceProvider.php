@@ -11,6 +11,7 @@ use Yousef\LaraOrcest\Agents\BusinessAnalystAgent;
 use Yousef\LaraOrcest\Agents\DatabaseAgent;
 use Yousef\LaraOrcest\Agents\FixerAgent;
 use Yousef\LaraOrcest\Agents\GitAgent;
+use Yousef\LaraOrcest\Agents\PackageManagerAgent;
 use Yousef\LaraOrcest\Agents\ProductManagerAgent;
 use Yousef\LaraOrcest\Agents\QaAgent;
 use Yousef\LaraOrcest\Agents\ReviewerAgent;
@@ -18,16 +19,19 @@ use Yousef\LaraOrcest\Agents\SubAgents\ApiContractAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\BacklogSplitterAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\ControllerResourceAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\DddBoundaryAgent;
+use Yousef\LaraOrcest\Agents\SubAgents\DependencyResolverAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\DomainRulesAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\FeatureTestAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\FixerSubAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\GitSubAgent;
+use Yousef\LaraOrcest\Agents\SubAgents\LaravelInstallerAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\MigrationAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\ModelEloquentAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\RequestValidationAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\SchemaPlannerAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\SeederAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\ServiceActionAgent;
+use Yousef\LaraOrcest\Agents\SubAgents\StructureScaffolderAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\SwaggerSubAgent;
 use Yousef\LaraOrcest\Agents\SubAgents\WebScrapingSubAgent;
 use Yousef\LaraOrcest\Agents\SwaggerAgent;
@@ -48,6 +52,8 @@ use Yousef\LaraOrcest\Skills\SkillRegistry;
 use Yousef\LaraOrcest\State\StateCheckpointer;
 use Yousef\LaraOrcest\Tools\ArtisanRunnerTool;
 use Yousef\LaraOrcest\Tools\CodebaseInspectorTool;
+use Yousef\LaraOrcest\Tools\ComposerRunnerTool;
+use Yousef\LaraOrcest\Tools\DirectoryScaffolderTool;
 use Yousef\LaraOrcest\Tools\FileReaderTool;
 use Yousef\LaraOrcest\Tools\GitCommandTool;
 use Yousef\LaraOrcest\Tools\HttpDispatchTool;
@@ -56,6 +62,7 @@ use Yousef\LaraOrcest\Tools\PatchWriterTool;
 use Yousef\LaraOrcest\Tools\Support\PathGuard;
 use Yousef\LaraOrcest\Tools\TestRunnerTool;
 use Yousef\LaraOrcest\Tools\ToolRegistry;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class LaraOrcestServiceProvider extends ServiceProvider
 {
@@ -75,6 +82,10 @@ class LaraOrcestServiceProvider extends ServiceProvider
 
         $this->app->singleton(OpenAiCompatibleHttpDriver::class, function ($app) {
             return $app->make(LlmManager::class)->driver('openai_compatible');
+        });
+
+        $this->app->singleton(WorkspaceContext::class, function () {
+            return WorkspaceContext::embedded();
         });
 
         $this->app->singleton(PathGuard::class, function () {
@@ -111,6 +122,14 @@ class LaraOrcestServiceProvider extends ServiceProvider
 
         $this->app->singleton(CodebaseInspectorTool::class, function ($app) {
             return new CodebaseInspectorTool(pathGuard: $app->make(PathGuard::class));
+        });
+
+        $this->app->singleton(ComposerRunnerTool::class, function ($app) {
+            return new ComposerRunnerTool();
+        });
+
+        $this->app->singleton(DirectoryScaffolderTool::class, function ($app) {
+            return new DirectoryScaffolderTool(pathGuard: $app->make(PathGuard::class));
         });
 
         $this->app->singleton(StateCheckpointer::class, function () {
@@ -156,6 +175,9 @@ class LaraOrcestServiceProvider extends ServiceProvider
             $registry->register(new FixerSubAgent());
             $registry->register(new SwaggerSubAgent());
             $registry->register(new GitSubAgent());
+            $registry->register(new LaravelInstallerAgent());
+            $registry->register(new DependencyResolverAgent());
+            $registry->register(new StructureScaffolderAgent());
 
             return $registry;
         });
@@ -170,6 +192,8 @@ class LaraOrcestServiceProvider extends ServiceProvider
             $registry->register($app->make(HttpFetchTool::class));
             $registry->register($app->make(HttpDispatchTool::class));
             $registry->register($app->make(CodebaseInspectorTool::class));
+            $registry->register($app->make(ComposerRunnerTool::class));
+            $registry->register($app->make(DirectoryScaffolderTool::class));
 
             return $registry;
         });
@@ -202,11 +226,15 @@ class LaraOrcestServiceProvider extends ServiceProvider
         $this->app->bind(RequestValidationAgent::class, fn () => new RequestValidationAgent());
         $this->app->bind(ServiceActionAgent::class, fn () => new ServiceActionAgent());
         $this->app->bind(ControllerResourceAgent::class, fn () => new ControllerResourceAgent());
+        $this->app->bind(LaravelInstallerAgent::class, fn () => new LaravelInstallerAgent());
+        $this->app->bind(DependencyResolverAgent::class, fn () => new DependencyResolverAgent());
+        $this->app->bind(StructureScaffolderAgent::class, fn () => new StructureScaffolderAgent());
 
-        // Register 9 built-in agents
+        // Register built-in lead agents
         $this->app->bind(BusinessAnalystAgent::class, fn () => new BusinessAnalystAgent());
         $this->app->bind(ProductManagerAgent::class, fn () => new ProductManagerAgent());
         $this->app->bind(ArchitectAgent::class, fn () => new ArchitectAgent());
+        $this->app->bind(PackageManagerAgent::class, fn () => new PackageManagerAgent());
         $this->app->bind(GitAgent::class, fn () => new GitAgent());
         $this->app->bind(DatabaseAgent::class, fn () => new DatabaseAgent());
         $this->app->bind(BackendAgent::class, fn () => new BackendAgent());

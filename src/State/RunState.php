@@ -56,7 +56,9 @@ class RunState
                 'cost' => 0.0,
             ],
         ],
-        public readonly array $metadata = []
+        public readonly array $metadata = [],
+        public readonly ?string $targetProjectPath = null,
+        public readonly string $workspaceMode = 'embedded'
     ) {
         $this->validateStatus($status);
     }
@@ -155,6 +157,33 @@ class RunState
             $swaggerMeta['path'] = (string) $options['swagger_path'];
         }
 
+        $noPackageManager = (bool) (
+            $options['no_package_manager']
+            ?? $options['skip_package_manager']
+            ?? $options['disable_package_manager']
+            ?? false
+        );
+        $pmConfigEnabled = (bool) Config::get('lara-orcest.package_manager.enabled', true);
+        $pmEnabled = ! $noPackageManager
+            && (isset($options['package_manager']['enabled']) ? (bool) $options['package_manager']['enabled'] : true)
+            && $pmConfigEnabled;
+
+        $pmMeta = (array) ($options['package_manager'] ?? []);
+        $pmMeta['enabled'] = $pmEnabled;
+        if ($noPackageManager) {
+            $pmMeta['disabled'] = true;
+        }
+
+        $targetProjectPath = isset($options['target_project_path'])
+            ? (string) $options['target_project_path']
+            : (isset($options['target_path'])
+                ? (string) $options['target_path']
+                : (isset($options['target'])
+                    ? (string) $options['target']
+                    : null));
+
+        $workspaceMode = (string) ($options['workspace_mode'] ?? ($targetProjectPath !== null ? 'standalone' : 'embedded'));
+
         return new self(
             runId: $runId,
             prompt: trim($prompt),
@@ -188,6 +217,7 @@ class RunState
                 'memory_enabled' => $memoryEnabled,
                 'web_scraping' => $webScrapingMeta,
                 'swagger' => $swaggerMeta,
+                'package_manager' => $pmMeta,
                 'human_in_the_loop' => [
                     'enabled' => $hitlEnabled,
                     'skip_review' => $skipReview,
@@ -196,7 +226,9 @@ class RunState
                     'pause_context' => null,
                     'decisions' => [],
                 ],
-            ]
+            ],
+            targetProjectPath: $targetProjectPath,
+            workspaceMode: $workspaceMode
         );
     }
 
@@ -229,7 +261,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -252,7 +286,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: array_merge($this->metadata, ['updated_at' => date('c')])
+            metadata: array_merge($this->metadata, ['updated_at' => date('c')]),
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -273,7 +309,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -294,7 +332,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -315,7 +355,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -336,7 +378,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -357,7 +401,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -378,7 +424,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -399,7 +447,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -420,7 +470,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -441,7 +493,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $metadata
+            metadata: $metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -476,7 +530,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -511,12 +567,19 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
     public function recordArtifact(string $path, string $action, string $summary, ?string $agent = null): self
     {
+        // Normalize artifact path to be relative to targetProjectPath if absolute
+        if ($this->targetProjectPath !== null && str_starts_with($path, $this->targetProjectPath)) {
+            $path = ltrim(substr($path, strlen($this->targetProjectPath)), DIRECTORY_SEPARATOR . '/\\');
+        }
+
         $artifacts = $this->artifacts;
         $entry = [
             'path' => $path,
@@ -545,7 +608,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -567,7 +632,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -615,7 +682,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -669,7 +738,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -698,7 +769,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -733,7 +806,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $guardrails,
-            metadata: $this->metadata
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -779,7 +854,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: array_merge($meta, ['updated_at' => date('c')])
+            metadata: array_merge($meta, ['updated_at' => date('c')]),
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         ));
     }
 
@@ -942,7 +1019,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: array_merge($meta, ['updated_at' => date('c')])
+            metadata: array_merge($meta, ['updated_at' => date('c')]),
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         ));
     }
 
@@ -1005,7 +1084,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: array_merge($meta, ['updated_at' => date('c')])
+            metadata: array_merge($meta, ['updated_at' => date('c')]),
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -1040,7 +1121,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $meta
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -1070,7 +1153,9 @@ class RunState
             scrapingResults: $sanitized,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $meta
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -1448,7 +1533,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $meta
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -1478,7 +1565,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $meta
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -1776,7 +1865,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $meta
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -1905,7 +1996,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $meta
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -1951,7 +2044,9 @@ class RunState
             scrapingResults: $this->scrapingResults,
             delegations: $this->delegations,
             guardrails: $this->guardrails,
-            metadata: $meta
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -2216,7 +2311,9 @@ class RunState
             scrapingResults: $mergedScraping,
             delegations: $mergedDelegations,
             guardrails: $guardrails,
-            metadata: $meta
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
         );
     }
 
@@ -2236,6 +2333,8 @@ class RunState
             'prompt' => $this->prompt,
             'current_node' => $this->currentNode,
             'status' => $this->status,
+            'target_project_path' => $this->targetProjectPath,
+            'workspace_mode' => $this->workspaceMode,
             'requirements_spec' => $this->requirementsSpec,
             'backlog' => $this->backlog,
             'technical_plan' => $this->technicalPlan,
@@ -2244,6 +2343,7 @@ class RunState
             'test_results' => $this->testResults,
             'reviews' => $this->reviews,
             'scraping_results' => $this->getScrapingResults(),
+            'package_manager' => $this->getPackageManager(),
             'delegations' => $this->delegations,
             'guardrails' => $this->guardrails,
             'metadata' => $sanitizedMetadata,
@@ -2288,7 +2388,202 @@ class RunState
                     'cost' => 0.0,
                 ],
             ]),
-            metadata: (array) ($data['metadata'] ?? [])
+            metadata: (function () use ($data) {
+                $meta = (array) ($data['metadata'] ?? []);
+                if (isset($data['package_manager']) && is_array($data['package_manager'])) {
+                    $meta['package_manager'] = array_merge((array) ($meta['package_manager'] ?? []), $data['package_manager']);
+                }
+                return $meta;
+            })(),
+            targetProjectPath: isset($data['target_project_path']) ? (string) $data['target_project_path'] : null,
+            workspaceMode: (string) ($data['workspace_mode'] ?? 'embedded')
+        );
+    }
+
+    /**
+     * Records structured package manager / bootstrapping results in metadata.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function withPackageManager(array $data): self
+    {
+        $meta = $this->metadata;
+        $meta['package_manager'] = array_merge((array) ($meta['package_manager'] ?? []), $data);
+        $meta['updated_at'] = date('c');
+
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
+            guardrails: $this->guardrails,
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getPackageManager(): array
+    {
+        return (array) ($this->metadata['package_manager'] ?? []);
+    }
+
+    public function isProjectBootstrapped(): bool
+    {
+        $pm = $this->getPackageManager();
+
+        return ! empty($pm['bootstrapped']);
+    }
+
+    public function shouldRunPackageManager(): bool
+    {
+        if ($this->isPackageManagerDisabled()) {
+            return false;
+        }
+
+        return (bool) Config::get('lara-orcest.package_manager.enabled', true);
+    }
+
+    public function isPackageManagerDisabled(): bool
+    {
+        $pm = (array) ($this->metadata['package_manager'] ?? []);
+
+        return ! empty($pm['disabled']);
+    }
+
+    public function withPackageManagerConfig(bool $enabled): self
+    {
+        $meta = $this->metadata;
+        $pm = (array) ($meta['package_manager'] ?? []);
+        $pm['enabled'] = $enabled;
+        if (! $enabled) {
+            $pm['disabled'] = true;
+        } else {
+            unset($pm['disabled']);
+        }
+        $meta['package_manager'] = $pm;
+
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
+            guardrails: $this->guardrails,
+            metadata: $meta,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $this->workspaceMode
+        );
+    }
+
+    /**
+     * Returns list of packages recorded as installed or requested.
+     *
+     * @return array<int, mixed>
+     */
+    public function getInstalledPackages(): array
+    {
+        $pm = $this->getPackageManager();
+
+        return (array) ($pm['packages'] ?? []);
+    }
+
+    /**
+     * Returns list of directories recorded as scaffolded.
+     *
+     * @return array<int, string>
+     */
+    public function getScaffoldedDirectories(): array
+    {
+        $pm = $this->getPackageManager();
+
+        return (array) ($pm['scaffolded_directories'] ?? []);
+    }
+
+    
+    public function getTargetProjectPath(): ?string
+    {
+        return $this->targetProjectPath;
+    }
+
+    public function getWorkspaceMode(): string
+    {
+        return $this->workspaceMode;
+    }
+
+    public function isStandalone(): bool
+    {
+        return $this->workspaceMode === 'standalone';
+    }
+
+    public function isEmbedded(): bool
+    {
+        return $this->workspaceMode === 'embedded';
+    }
+
+    public function withTargetProjectPath(?string $targetProjectPath): self
+    {
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
+            guardrails: $this->guardrails,
+            metadata: $this->metadata,
+            targetProjectPath: $targetProjectPath,
+            workspaceMode: $this->workspaceMode
+        );
+    }
+
+    public function withWorkspaceMode(string $workspaceMode): self
+    {
+        return new self(
+            runId: $this->runId,
+            prompt: $this->prompt,
+            currentNode: $this->currentNode,
+            status: $this->status,
+            requirementsSpec: $this->requirementsSpec,
+            backlog: $this->backlog,
+            technicalPlan: $this->technicalPlan,
+            gitState: $this->gitState,
+            artifacts: $this->artifacts,
+            testResults: $this->testResults,
+            reviews: $this->reviews,
+            scrapingResults: $this->scrapingResults,
+            delegations: $this->delegations,
+            guardrails: $this->guardrails,
+            metadata: $this->metadata,
+            targetProjectPath: $this->targetProjectPath,
+            workspaceMode: $workspaceMode
         );
     }
 

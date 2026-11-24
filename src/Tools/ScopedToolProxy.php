@@ -20,7 +20,24 @@ class ScopedToolProxy implements ToolContract
         protected array $scopePaths = [],
         ?PathGuard $pathGuard = null
     ) {
+        if ($pathGuard === null && method_exists($tool, 'getPathGuard') && $tool->getPathGuard() instanceof PathGuard) {
+            $pathGuard = $tool->getPathGuard();
+        }
         $this->pathGuard = $pathGuard ?: new PathGuard();
+    }
+
+    public function getPathGuard(): PathGuard
+    {
+        return $this->pathGuard;
+    }
+
+    public function getWorkspaceContext(): ?WorkspaceContext
+    {
+        if (method_exists($this->tool, 'getWorkspaceContext')) {
+            return $this->tool->getWorkspaceContext();
+        }
+
+        return $this->pathGuard->getWorkspaceContext();
     }
 
     public function getName(): string
@@ -71,14 +88,41 @@ class ScopedToolProxy implements ToolContract
 
     public function execute(array $params): array
     {
-        // If scope paths are restricted and params target a path, enforce the scope boundary
-        if (! empty($this->scopePaths) && isset($params['path'])) {
-            $path = (string) $params['path'];
-            $this->validateScope($path);
+        // If scope paths are restricted and params target a path or directory, enforce the scope boundary
+        if (! empty($this->scopePaths)) {
+            if (isset($params['path'])) {
+                $this->validateScope((string) $params['path']);
+            }
+            if (isset($params['directory'])) {
+                $this->validateScope((string) $params['directory']);
+            }
+            if (isset($params['directories']) && is_array($params['directories'])) {
+                foreach ($params['directories'] as $dir) {
+                    if (is_string($dir)) {
+                        $this->validateScope($dir);
+                    }
+                }
+            }
+            if (isset($params['files']) && is_array($params['files'])) {
+                foreach ($params['files'] as $f) {
+                    if (is_array($f) && isset($f['path']) && is_string($f['path'])) {
+                        $this->validateScope($f['path']);
+                    }
+                }
+            }
         }
 
         // If underlying tool is PatchWriterTool, configure its allowedPrefixes
         if ($this->tool instanceof PatchWriterTool && ! empty($this->scopePaths)) {
+            $cleanPrefixes = array_map(function ($p) {
+                return rtrim(preg_replace('/(\/\*\*|\/\*|\*)$/', '', $p) ?? $p, '/\\') . '/';
+            }, $this->scopePaths);
+
+            $this->tool->setAllowedPrefixes($cleanPrefixes);
+        }
+
+        // If underlying tool is DirectoryScaffolderTool, configure its allowedPrefixes
+        if ($this->tool instanceof DirectoryScaffolderTool && ! empty($this->scopePaths)) {
             $cleanPrefixes = array_map(function ($p) {
                 return rtrim(preg_replace('/(\/\*\*|\/\*|\*)$/', '', $p) ?? $p, '/\\') . '/';
             }, $this->scopePaths);

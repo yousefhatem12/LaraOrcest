@@ -123,6 +123,82 @@ class FakeDriver implements LlmDriverContract
             ];
         }
 
+        if ($agentKey === 'laravel_installer_agent' || str_contains($system, 'laravel_installer_agent') || str_contains($system, 'Laravel Installation & Environment Specialist')) {
+            return [
+                'status' => 'initialized',
+                'action' => 'bootstrap_project',
+                'composer_command' => 'create-project laravel/laravel . --prefer-dist --no-interaction',
+                'environment_defaults' => [
+                    'APP_NAME' => 'LaraOrcestApp',
+                    'APP_ENV' => 'local',
+                    'APP_KEY' => 'base64:fakeKeyForTestingPurposesOnly1234567890=',
+                ],
+                'summary' => 'Bootstrapped fresh Laravel application structure and environment configuration.',
+            ];
+        }
+
+        if ($agentKey === 'dependency_resolver_agent' || str_contains($system, 'dependency_resolver_agent') || str_contains($system, 'Composer Dependency & Package Resolver')) {
+            return [
+                'packages' => [
+                    [
+                        'name' => 'spatie/laravel-permission',
+                        'version' => '^6.0',
+                        'dev' => false,
+                        'reason' => 'Required for role and permission management according to technical plan.',
+                    ],
+                ],
+                'summary' => 'Resolved and scheduled installation for requested Composer packages.',
+            ];
+        }
+
+        if ($agentKey === 'structure_scaffolder_agent' || str_contains($system, 'structure_scaffolder_agent') || str_contains($system, 'Laravel Architecture & Directory Scaffolder')) {
+            return [
+                'directories' => [
+                    'app/Domains/Billing',
+                    'app/Domains/Billing/Models',
+                    'app/Domains/Billing/Actions',
+                ],
+                'files' => [
+                    [
+                        'path' => 'app/Domains/Billing/README.md',
+                        'content' => "# Billing Domain\n\nModular domain for billing and invoicing.\n",
+                        'summary' => 'Initial documentation for Billing domain module.',
+                    ],
+                ],
+                'summary' => 'Scaffolded modular Domain-Driven Design directory structure.',
+            ];
+        }
+
+        if ($agentKey === 'package_manager_agent' || str_contains($system, 'package_manager_agent') || str_contains($system, 'Laravel Package Manager & Project Bootstrapper')) {
+            return [
+                'bootstrap' => [
+                    'status' => 'initialized',
+                    'action' => 'bootstrap_project',
+                    'summary' => 'Laravel project verified and initialized.',
+                ],
+                'packages' => [
+                    [
+                        'name' => 'spatie/laravel-permission',
+                        'version' => '^6.0',
+                        'dev' => false,
+                        'reason' => 'Role and permission management.',
+                    ],
+                ],
+                'directories' => [
+                    'app/Domains/Billing',
+                    'app/Domains/Billing/Models',
+                ],
+                'files' => [
+                    [
+                        'path' => 'app/Domains/Billing/README.md',
+                        'content' => "# Billing Domain\n\nModular domain for billing and invoicing.\n",
+                        'summary' => 'Initial documentation for Billing domain module.',
+                    ],
+                ],
+                'summary' => 'Bootstrapped target Laravel project, required packages, and scaffolded modular directories.',
+            ];
+        }
+
         if (str_contains($system, 'Domain Rules') || str_contains($system, 'domain_rules_agent')) {
             return [
                 'business_rules' => [

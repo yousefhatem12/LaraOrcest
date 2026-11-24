@@ -70,6 +70,10 @@ class BackendAgent extends AbstractAgent
                     'prompt' => $state->prompt,
                     'scraped_data' => $state->getScrapingResults(),
                     'project_memory' => $this->resolveProjectMemoryContext($state),
+                    'target_project_path' => $state->targetProjectPath,
+                    'workspace_mode' => $state->workspaceMode,
+                    'package_manager' => $state->metadata['package_manager'] ?? [],
+                    'artifacts' => $state->artifacts,
                 ];
 
                 $delegationResult = $this->delegateSubTasks(

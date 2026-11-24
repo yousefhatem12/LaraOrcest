@@ -7,17 +7,20 @@ namespace Yousef\LaraOrcest\State\Drivers;
 use RuntimeException;
 use Yousef\LaraOrcest\Contracts\CheckpointerContract;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class JsonCheckpointer implements CheckpointerContract
 {
     protected string $storagePath;
+    protected ?WorkspaceContext $workspaceContext = null;
 
-    public function __construct(?string $storagePath = null)
+    public function __construct(?string $storagePath = null, ?WorkspaceContext $workspaceContext = null)
     {
+        $this->workspaceContext = $workspaceContext;
         $container = \Illuminate\Container\Container::getInstance();
-        $this->storagePath = $storagePath ?: ($container !== null && method_exists($container, 'storagePath')
+        $this->storagePath = $storagePath ?: ($workspaceContext ? $workspaceContext->getStatePath() : ($container !== null && method_exists($container, 'storagePath')
             ? storage_path('app/orcest/checkpoints')
-            : sys_get_temp_dir() . '/lara-orcest-checkpoints');
+            : sys_get_temp_dir() . '/lara-orcest-checkpoints'));
 
         if (! is_dir($this->storagePath) && ! @mkdir($this->storagePath, 0755, true) && ! is_dir($this->storagePath)) {
             throw new RuntimeException("Cannot create checkpoint directory: {$this->storagePath}");

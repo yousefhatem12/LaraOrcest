@@ -8,15 +8,44 @@ use InvalidArgumentException;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Support\Config;
 use Yousef\LaraOrcest\Tools\Support\PathGuard;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class CodebaseInspectorTool implements ToolContract
 {
     protected PathGuard $pathGuard;
+    protected ?WorkspaceContext $workspaceContext = null;
 
     public function __construct(
-        ?PathGuard $pathGuard = null
+        ?PathGuard $pathGuard = null,
+        ?WorkspaceContext $workspaceContext = null
     ) {
-        $this->pathGuard = $pathGuard ?: new PathGuard();
+        $this->workspaceContext = $workspaceContext;
+        $this->pathGuard = $pathGuard ?: ($workspaceContext ? $workspaceContext->createPathGuard() : new PathGuard());
+    }
+
+    public function getPathGuard(): PathGuard
+    {
+        return $this->pathGuard;
+    }
+
+    public function setPathGuard(PathGuard $pathGuard): self
+    {
+        $this->pathGuard = $pathGuard;
+
+        return $this;
+    }
+
+    public function getWorkspaceContext(): ?WorkspaceContext
+    {
+        return $this->workspaceContext;
+    }
+
+    public function setWorkspaceContext(WorkspaceContext $context): self
+    {
+        $this->workspaceContext = $context;
+        $this->pathGuard = $context->createPathGuard();
+
+        return $this;
     }
 
     public function getName(): string

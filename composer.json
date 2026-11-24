@@ -33,8 +33,12 @@
     "illuminate/database": "^11.0|^12.0",
     "illuminate/http": "^11.0|^12.0",
     "illuminate/process": "^11.0|^12.0",
+    "symfony/console": "^7.0",
     "symfony/process": "^7.0"
   },
+  "bin": [
+    "bin/lara-orcest"
+  ],
   "require-dev": {
     "orchestra/testbench": "^9.0|^10.0",
     "phpunit/phpunit": "^10.5|^11.0",

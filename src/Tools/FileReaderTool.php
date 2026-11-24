@@ -8,13 +8,40 @@ use InvalidArgumentException;
 use RuntimeException;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Tools\Support\PathGuard;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class FileReaderTool implements ToolContract
 {
     public function __construct(
-        protected ?PathGuard $pathGuard = null
+        protected ?PathGuard $pathGuard = null,
+        protected ?WorkspaceContext $workspaceContext = null
     ) {
-        $this->pathGuard = $pathGuard ?: new PathGuard();
+        $this->pathGuard = $pathGuard ?: ($workspaceContext ? $workspaceContext->createPathGuard() : new PathGuard());
+    }
+
+    public function getPathGuard(): PathGuard
+    {
+        return $this->pathGuard;
+    }
+
+    public function setPathGuard(PathGuard $pathGuard): self
+    {
+        $this->pathGuard = $pathGuard;
+
+        return $this;
+    }
+
+    public function getWorkspaceContext(): ?WorkspaceContext
+    {
+        return $this->workspaceContext;
+    }
+
+    public function setWorkspaceContext(WorkspaceContext $context): self
+    {
+        $this->workspaceContext = $context;
+        $this->pathGuard = $context->createPathGuard();
+
+        return $this;
     }
 
     public function getName(): string

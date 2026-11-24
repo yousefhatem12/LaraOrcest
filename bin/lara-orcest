@@ -1,0 +1,29 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$autoloadFiles = [
+    __DIR__ . '/../vendor/autoload.php',
+    __DIR__ . '/../../../autoload.php',
+];
+
+$autoloader = null;
+foreach ($autoloadFiles as $file) {
+    if (file_exists($file)) {
+        $autoloader = $file;
+        break;
+    }
+}
+
+if ($autoloader === null) {
+    fwrite(STDERR, "Error: Unable to locate Composer autoloader. Please run 'composer install'.\n");
+    exit(1);
+}
+
+require $autoloader;
+
+use Yousef\LaraOrcest\Console\LaraOrcestApplication;
+
+$application = new LaraOrcestApplication();
+exit($application->run());

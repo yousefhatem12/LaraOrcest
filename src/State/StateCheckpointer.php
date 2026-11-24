@@ -9,14 +9,19 @@ use Yousef\LaraOrcest\Contracts\CheckpointerContract;
 use Yousef\LaraOrcest\State\Drivers\DatabaseCheckpointer;
 use Yousef\LaraOrcest\State\Drivers\JsonCheckpointer;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class StateCheckpointer implements CheckpointerContract
 {
     protected ?CheckpointerContract $driver = null;
+    protected ?WorkspaceContext $workspaceContext = null;
 
-    public function __construct(?CheckpointerContract $driver = null)
-    {
+    public function __construct(
+        ?CheckpointerContract $driver = null,
+        ?WorkspaceContext $workspaceContext = null
+    ) {
         $this->driver = $driver;
+        $this->workspaceContext = $workspaceContext;
     }
 
     public function getDriver(): CheckpointerContract
@@ -25,23 +30,17 @@ class StateCheckpointer implements CheckpointerContract
             return $this->driver;
         }
 
-        $driverName = (string) Config::get(
-            'lara-orcest.checkpoint.driver',
-            Config::get('lara-orcest.checkpointer.driver', 'json')
-        );
+        $driverName = (string) ($this->workspaceContext?->getConfig()->get('checkpoint.driver')
+            ?: Config::get('lara-orcest.checkpoint.driver', Config::get('lara-orcest.checkpointer.driver', 'json')));
 
-        $jsonPath = Config::get(
-            'lara-orcest.checkpoint.path',
-            Config::get('lara-orcest.checkpoint.json_path', Config::get('lara-orcest.checkpointer.json_path'))
-        );
+        $jsonPath = $this->workspaceContext?->getConfig()->get('checkpoint.path')
+            ?: Config::get('lara-orcest.checkpoint.path', Config::get('lara-orcest.checkpoint.json_path', Config::get('lara-orcest.checkpointer.json_path')));
 
-        $table = Config::get(
-            'lara-orcest.checkpoint.table',
-            Config::get('lara-orcest.checkpointer.table')
-        );
+        $table = $this->workspaceContext?->getConfig()->get('checkpoint.table')
+            ?: Config::get('lara-orcest.checkpoint.table', Config::get('lara-orcest.checkpointer.table'));
 
         return $this->driver = match ($driverName) {
-            'json' => new JsonCheckpointer($jsonPath ? (string) $jsonPath : null),
+            'json' => new JsonCheckpointer($jsonPath ? (string) $jsonPath : null, $this->workspaceContext),
             'database' => new DatabaseCheckpointer($table ? (string) $table : null),
             default => throw new InvalidArgumentException("Unsupported checkpointer driver: [{$driverName}]"),
         };

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Yousef\LaraOrcest\Support;
 
 use Illuminate\Container\Container;
+use Yousef\LaraOrcest\Config\OrchestratorConfig;
 
 class Config
 {
@@ -12,6 +13,24 @@ class Config
      * @var array<string, mixed>
      */
     protected static array $overrides = [];
+
+    protected static ?OrchestratorConfig $orchestratorConfig = null;
+
+    /**
+     * Set the active standalone OrchestratorConfig instance.
+     */
+    public static function setOrchestratorConfig(?OrchestratorConfig $config): void
+    {
+        self::$orchestratorConfig = $config;
+    }
+
+    /**
+     * Get the active standalone OrchestratorConfig instance if set.
+     */
+    public static function getOrchestratorConfig(): ?OrchestratorConfig
+    {
+        return self::$orchestratorConfig;
+    }
 
     /**
      * Safely retrieves a configuration value, even if the Laravel application is not booted.
@@ -28,6 +47,20 @@ class Config
             return $container->make('config')->get($key, $default);
         }
 
+        if (self::$orchestratorConfig !== null) {
+            $val = self::$orchestratorConfig->get($key);
+            if ($val !== null) {
+                return $val;
+            }
+            if (str_starts_with($key, 'lara-orcest.')) {
+                $subKey = substr($key, strlen('lara-orcest.'));
+                $val = self::$orchestratorConfig->get($subKey);
+                if ($val !== null) {
+                    return $val;
+                }
+            }
+        }
+
         return $default;
     }
 
@@ -38,6 +71,10 @@ class Config
     {
         self::$overrides[$key] = $value;
 
+        if (self::$orchestratorConfig !== null) {
+            self::$orchestratorConfig->set($key, $value);
+        }
+
         $container = Container::getInstance();
 
         if ($container !== null && $container->bound('config')) {
@@ -46,15 +83,16 @@ class Config
     }
 
     /**
-     * Clears all in-memory static overrides.
+     * Clears all in-memory static overrides and resets active orchestrator config.
      */
     public static function clearOverrides(): void
     {
         self::$overrides = [];
+        self::$orchestratorConfig = null;
     }
 
     /**
-     * Safely retrieves the application base path or falls back to current working directory.
+     * Safely retrieves the application base path or falls back to target project path / current working directory.
      */
     public static function basePath(?string $path = null): string
     {
@@ -64,7 +102,11 @@ class Config
             return $container->basePath($path);
         }
 
-        $base = getcwd() ?: '.';
+        if (self::$orchestratorConfig !== null && self::$orchestratorConfig->getTargetProjectPath() !== null) {
+            $base = self::$orchestratorConfig->getTargetProjectPath();
+        } else {
+            $base = getcwd() ?: '.';
+        }
 
         return $path !== null
             ? rtrim($base, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . ltrim($path, DIRECTORY_SEPARATOR)

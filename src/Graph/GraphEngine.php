@@ -16,6 +16,7 @@ use Yousef\LaraOrcest\Graph\Nodes\SubGraphNode;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Support\Config;
 use Yousef\LaraOrcest\Tools\GitCommandTool;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class GraphEngine
 {
@@ -37,14 +38,31 @@ class GraphEngine
 
     protected ?CheckpointerContract $checkpointer = null;
 
+    protected ?WorkspaceContext $workspaceContext = null;
+
     /**
      * @var array<int, Closure>
      */
     protected array $stepListeners = [];
 
-    public function __construct(?CheckpointerContract $checkpointer = null)
-    {
+    public function __construct(
+        ?CheckpointerContract $checkpointer = null,
+        ?WorkspaceContext $workspaceContext = null
+    ) {
         $this->checkpointer = $checkpointer;
+        $this->workspaceContext = $workspaceContext;
+    }
+
+    public function getWorkspaceContext(): ?WorkspaceContext
+    {
+        return $this->workspaceContext;
+    }
+
+    public function setWorkspaceContext(WorkspaceContext $context): self
+    {
+        $this->workspaceContext = $context;
+
+        return $this;
     }
 
     /**
@@ -57,9 +75,10 @@ class GraphEngine
         ?CheckpointerContract $checkpointer = null,
         ?array $tools = null,
         bool $withScraper = false,
-        bool $withSwagger = false
+        bool $withSwagger = false,
+        ?WorkspaceContext $workspaceContext = null
     ): self {
-        return DefaultGraphBuilder::build($llm, $checkpointer, $tools, $withScraper, $withSwagger);
+        return DefaultGraphBuilder::build($llm, $checkpointer, $tools, $withScraper, $withSwagger, $workspaceContext);
     }
 
     public function addNode(GraphNodeContract $node): self
@@ -242,6 +261,11 @@ class GraphEngine
         // If state is already terminal, return immediately
         if ($state->isCompleted() || $state->isFailed()) {
             return $state;
+        }
+
+        // If graph contains a dedicated fixer_agent node, tag metadata so QA pod delegates fix loop to graph transitions
+        if ($this->hasNode('fixer_agent') && empty($state->metadata['graph_fixer_loop'])) {
+            $state = $state->withMetadata(array_merge($state->metadata, ['graph_fixer_loop' => true]));
         }
 
         // Resume if paused
@@ -435,7 +459,18 @@ class GraphEngine
         if ($autoCommit && ! $state->isDryRun() && ! empty($state->artifacts)) {
             // Commit verified changes
             try {
-                $git = new GitCommandTool();
+                $git = $this->workspaceContext !== null
+                    ? new GitCommandTool(
+                        projectRoot: $this->workspaceContext->getTargetProjectPath(),
+                        pathGuard: $this->workspaceContext->createPathGuard(),
+                        workspaceContext: $this->workspaceContext
+                    )
+                    : ($state->getTargetProjectPath()
+                        ? new GitCommandTool(
+                            projectRoot: $state->getTargetProjectPath(),
+                            pathGuard: new \Yousef\LaraOrcest\Tools\Support\PathGuard($state->getTargetProjectPath())
+                        )
+                        : new GitCommandTool());
                 $artifactPaths = array_column($state->artifacts, 'path');
                 $git->stageFiles($artifactPaths);
                 $commitRes = $git->commit("feat(orcest): implement {$state->prompt}");
@@ -458,7 +493,11 @@ class GraphEngine
                 /** @var \Yousef\LaraOrcest\Contracts\ProjectMemoryContract $memoryStore */
                 $memoryStore = ($container !== null && $container->bound(\Yousef\LaraOrcest\Contracts\ProjectMemoryContract::class))
                     ? $container->make(\Yousef\LaraOrcest\Contracts\ProjectMemoryContract::class)
-                    : new \Yousef\LaraOrcest\Memory\ProjectMemoryStore();
+                    : ($this->workspaceContext
+                        ? $this->workspaceContext->createMemoryStore()
+                        : ($state->getTargetProjectPath()
+                            ? new \Yousef\LaraOrcest\Memory\ProjectMemoryStore(pathGuard: new \Yousef\LaraOrcest\Tools\Support\PathGuard($state->getTargetProjectPath()))
+                            : new \Yousef\LaraOrcest\Memory\ProjectMemoryStore()));
 
                 $memoryStore->consolidate($state);
             } catch (\Throwable) {

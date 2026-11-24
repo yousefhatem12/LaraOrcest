@@ -53,6 +53,15 @@ class AgentGraphNode implements GraphNodeContract
             return $failedState;
         }
 
+        // Propagate dry_run setting to tools if enabled
+        if ($state->isDryRun()) {
+            foreach ($this->tools as $tool) {
+                if (method_exists($tool, 'setDryRun')) {
+                    $tool->setDryRun(true);
+                }
+            }
+        }
+
         try {
             $updatedState = $this->agent->execute($state, $this->tools, $this->llm);
             $this->saveCheckpoint($updatedState);

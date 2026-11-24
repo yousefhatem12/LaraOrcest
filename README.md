@@ -153,6 +153,9 @@ Workflows in `LaraOrcest` execute deterministically through `GraphEngine`, evalu
     git_agent (isolates branch orcest/...)
         │
         ▼
+ package_manager_agent (bootstraps target project, packages & structure)
+        │
+        ▼
  database_agent (migrations & models)
         │
         ▼
@@ -253,35 +256,68 @@ Natively organizes specialized agents into hierarchical Lead and Sub-Agent teams
   - Driven by dedicated skills: `laravel-modular-ddd-architecture`, `relational-schema-indexing`, and `rest-api-contract-design`.
   - Sub-agents utilize `CodebaseInspectorTool` for read-only workspace, model, migration, route, and symbol inspection without mutating files.
   - Runs in parallel waves when `teams.parallel_sub_agents` is enabled, synthesizing a comprehensive `technical_plan` in `RunState`.
-- **Database Pod:**
+- **PackageManager Pod (Phase B):**
+  - `package_manager_agent` leads `laravel_installer_agent`, `dependency_resolver_agent`, and `structure_scaffolder_agent`.
+  - Driven by dedicated skills: `laravel-project-bootstrapping`, `composer-dependency-management`, and `laravel-directory-scaffolding`.
+  - Pre-flights target workspace (`targetProjectPath`), bootstraps fresh Laravel skeleton idempotently, resolves and installs Composer packages, and scaffolds modular DDD directory structures.
+  - Utilizes sandboxed `ComposerRunnerTool` and `DirectoryScaffolderTool` with `PathGuard` boundary protection.
+- **Database Pod (Phase C):**
   - `database_agent` leads `migration_agent`, `model_eloquent_agent`, and `seeder_agent`.
   - Driven by dedicated skills: `laravel-safe-migrations`, `eloquent-models-and-factories`, and `idempotent-database-seeders`.
-  - Executes sequentially in 3 distinct waves based on strict `dependsOn()` dependencies:
+  - Executes against `WorkspaceContext::$targetProjectPath` in 3 distinct waves based on strict `dependsOn()` dependencies:
     - Wave 0: `migration_agent` (scoped strictly to `database/migrations/**`).
     - Wave 1: `model_eloquent_agent` (scoped strictly to `app/Models/**`, `app/Domains/**/Models/**`, `database/factories/**`).
     - Wave 2: `seeder_agent` (scoped strictly to `database/seeders/**`).
-  - Automatically records generated database artifacts into `RunState::$artifacts` with sub-agent attribution and respects `--dry-run` non-destructive previews.
-- **Backend Pod:**
+  - Automatically records generated database artifacts into `RunState::$artifacts` with normalized paths relative to `targetProjectPath` and respects `--dry-run` non-destructive previews.
+- **Backend Pod (Phase C):**
   - `backend_agent` leads `request_validation_agent`, `service_action_agent`, and `controller_resource_agent`.
   - Driven by dedicated skills: `laravel-form-requests-authorization`, `service-action-workflows`, and `controllers-resources-routes`.
-  - Executes sequentially in 3 distinct waves based on strict `dependsOn()` dependencies:
+  - Executes against `WorkspaceContext::$targetProjectPath` in 3 distinct waves based on strict `dependsOn()` dependencies:
     - Wave 0: `request_validation_agent` (scoped strictly to `app/Http/Requests/**`, `app/Policies/**`).
     - Wave 1: `service_action_agent` (scoped strictly to `app/Services/**`, `app/Actions/**`, `app/Events/**`).
     - Wave 2: `controller_resource_agent` (scoped strictly to `app/Http/Controllers/**`, `app/Http/Resources/**`, `routes/**`).
   - Enforces thin controller design delegating to Action classes, wrapped with `JsonResource` transformers and clean `routes/api.php` endpoints.
-- **Quality, Docs & Release Pod:**
-  - `qa_agent` leads `feature_test_agent` and `fixer_agent`.
+- **Quality & Release Pod (Phase C):**
+  - `qa_agent` leads `feature_test_agent` and `fixer_agent` inside `targetProjectPath`.
     - Driven by `laravel-feature-testing` and `root-cause-test-fixing` skills.
     - `feature_test_agent` generates complete Feature & Unit tests scoped strictly to `tests/**`.
-    - Executes `TestRunnerTool`; if tests fail and fix attempts remain, triggers `fixer_agent` for surgical root-cause debugging across `app/**`, `database/**`, `routes/**`, and `tests/**`.
-  - `reviewer_agent` leads `swagger_agent` and `git_agent`.
+    - Validates target test binaries (`pest`, `phpunit`, `artisan`) and runs `TestRunnerTool`; if tests fail and fix attempts remain, triggers `fixer_agent` for surgical root-cause debugging.
+  - `reviewer_agent` leads `swagger_agent` and `git_agent` inside `targetProjectPath`.
     - Driven by `openapi-swagger-spec` and `safe-git-release` skills.
-    - If OpenAPI docs are enabled/requested, `swagger_agent` generates OpenAPI 3.0+ documentation in `docs/swagger.json`.
-    - Coordinates with `git_agent` to branch (`orcest/...`) and commit verified milestones upon review approval, honoring dry-run mode and Human-in-the-Loop review gates (`before_commit`).
+    - Generates OpenAPI 3.0+ documentation in `docs/swagger.json` and coordinates with `git_agent` to branch (`orcest/...`) and commit verified milestones.
+- **Single-Agent Fallback & Dry-Run Continuity:**
+  - When `lara-orcest.teams.enabled = false`, all pods fall back gracefully to lead agents executing single-agent workflows.
+  - Full `--dry-run` simulation mode is supported across every pod without mutating disk or git repository state.
 
 ---
 
-## Installation & Setup
+## Standalone Control Plane CLI (`bin/lara-orcest` Above Laravel)
+
+LaraOrcest functions as an autonomous **Standalone Control Plane** that sits outside and above Laravel applications. It controls external Laravel projects by passing `--target=/path/to/project`:
+
+```bash
+# 1. Initialize configuration for an external target project
+bin/lara-orcest init /path/to/target-laravel-app
+
+# 2. Run multi-agent feature delivery against the target project
+bin/lara-orcest build "Implement invoice billing with Stripe webhooks" --target=/path/to/target-laravel-app
+
+# 3. Dry-run preview without modifying files or git branches
+bin/lara-orcest build "Add multi-tenant team management" --target=/path/to/target-laravel-app --dry-run
+
+# 4. Resume an interrupted or paused run
+bin/lara-orcest resume <run_id> --target=/path/to/target-laravel-app
+
+# 5. Inspect execution status, checkpoints, and delegations
+bin/lara-orcest status
+bin/lara-orcest status <run_id>
+```
+
+---
+
+## Installation & Setup (Embedded Mode)
+
+When embedding LaraOrcest directly into an existing Laravel application container:
 
 ### 1. Standard Installation (via Composer & Packagist)
 
@@ -390,7 +426,59 @@ LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT=gpt-4o-mini
 
 ## Usage & Examples
 
-### 1. Artisan CLI Commands
+### 1. Standalone Control Plane CLI (`bin/lara-orcest`) — *Primary Mode*
+
+Run LaraOrcest as an autonomous control plane that sits **above Laravel**, managing any target Laravel workspace from the outside without requiring a host Laravel installation:
+
+#### Initialize Workspace
+```bash
+# Initialize a workspace configuration pointing to a target Laravel project
+bin/lara-orcest init /path/to/my-laravel-app
+
+# Or initialize the current directory as the target project
+bin/lara-orcest init
+```
+
+#### Orchestrate a Feature
+```bash
+# Run multi-agent pipeline against the managed target Laravel workspace
+bin/lara-orcest build "Implement REST API for invoice billing with Stripe webhooks" --target=/path/to/my-laravel-app
+
+# Dry-run mode: Preview requirements, backlog, code diffs, and test runs without mutating disk or Git
+bin/lara-orcest build "Add two-factor authentication" --target=/path/to/my-laravel-app --dry-run
+
+# Interactive Human-in-the-Loop review gates
+bin/lara-orcest build "Create subscription billing" --target=/path/to/my-laravel-app --interactive
+
+# Fully autonomous mode bypassing human review gates
+bin/lara-orcest build "Create subscription billing" --target=/path/to/my-laravel-app --no-human-review
+
+# Resume an interrupted or paused run
+bin/lara-orcest build --resume=run_a1b2c3d4e5f6 --target=/path/to/my-laravel-app
+```
+
+#### Inspect Status & Delegation Checkpoints
+```bash
+# Inspect all runs and active workspace target path
+bin/lara-orcest status --target=/path/to/my-laravel-app
+
+# Inspect full details for a specific run ID (artifacts, tests, reviews, tokens, git branch)
+bin/lara-orcest status run_a1b2c3d4e5f6 --target=/path/to/my-laravel-app
+
+# Machine-readable JSON output
+bin/lara-orcest status run_a1b2c3d4e5f6 --json
+```
+
+#### Approve or Reject a Paused Run
+```bash
+# Approve a paused run at its active review gate and resume execution
+bin/lara-orcest approve run_a1b2c3d4e5f6 --note="Plan approved"
+
+# Reject and terminate execution cleanly
+bin/lara-orcest approve run_a1b2c3d4e5f6 --reject --note="Revise data model"
+```
+
+### 2. Embedded Laravel Artisan Commands — *In-App Compatibility*
 
 #### Build a Feature
 ```bash

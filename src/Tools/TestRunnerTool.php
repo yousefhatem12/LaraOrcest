@@ -7,6 +7,7 @@ namespace Yousef\LaraOrcest\Tools;
 use Symfony\Component\Process\Process;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class TestRunnerTool implements ToolContract
 {
@@ -21,6 +22,10 @@ class TestRunnerTool implements ToolContract
 
     protected bool $dryRun;
 
+    protected ?WorkspaceContext $workspaceContext = null;
+
+    protected bool $isCustomBaseCommand = false;
+
     /**
      * @param  array<int, string>|null  $baseCommand
      */
@@ -28,20 +33,30 @@ class TestRunnerTool implements ToolContract
         ?string $projectRoot = null,
         ?array $baseCommand = null,
         int $timeout = 120,
-        bool $dryRun = false
+        bool $dryRun = false,
+        ?WorkspaceContext $workspaceContext = null
     ) {
-        $this->projectRoot = $projectRoot ?: Config::basePath();
+        $this->workspaceContext = $workspaceContext;
+        $this->projectRoot = $projectRoot ?: ($workspaceContext?->getTargetProjectPath() ?: Config::basePath());
 
-        $configuredCmd = Config::get('lara-orcest.tools.test_command');
+        $configuredCmd = $workspaceContext?->getConfig()->get('tools.test_command')
+            ?: Config::get('lara-orcest.tools.test_command');
         if (is_array($configuredCmd) && ! empty($configuredCmd)) {
             $this->baseCommand = $configuredCmd;
+            $this->isCustomBaseCommand = true;
         } elseif (is_string($configuredCmd) && trim($configuredCmd) !== '') {
             $this->baseCommand = explode(' ', trim($configuredCmd));
+            $this->isCustomBaseCommand = true;
+        } elseif ($baseCommand !== null) {
+            $this->baseCommand = $baseCommand;
+            $this->isCustomBaseCommand = true;
         } else {
-            $this->baseCommand = $baseCommand ?: [PHP_BINARY, 'artisan', 'test', '--without-tty'];
+            $this->baseCommand = [PHP_BINARY, 'artisan', 'test', '--without-tty'];
+            $this->isCustomBaseCommand = false;
         }
 
-        $configuredTimeout = Config::get('lara-orcest.tools.process_timeout');
+        $configuredTimeout = $workspaceContext?->getConfig()->get('tools.process_timeout')
+            ?: Config::get('lara-orcest.tools.process_timeout');
         $this->timeout = $configuredTimeout ? (int) $configuredTimeout : $timeout;
 
         $this->dryRun = $dryRun;
@@ -67,6 +82,81 @@ class TestRunnerTool implements ToolContract
     public function isDryRun(): bool
     {
         return $this->dryRun;
+    }
+
+    public function getWorkspaceContext(): ?WorkspaceContext
+    {
+        return $this->workspaceContext;
+    }
+
+    public function setWorkspaceContext(WorkspaceContext $context): self
+    {
+        $this->workspaceContext = $context;
+        $this->projectRoot = $context->getTargetProjectPath();
+
+        return $this;
+    }
+
+    public function getProjectRoot(): string
+    {
+        return $this->projectRoot;
+    }
+
+    public function setProjectRoot(string $projectRoot): self
+    {
+        $this->projectRoot = $projectRoot;
+
+        return $this;
+    }
+
+    public function getBaseCommand(): array
+    {
+        return $this->baseCommand;
+    }
+
+    public function setBaseCommand(array $baseCommand): self
+    {
+        $this->baseCommand = $baseCommand;
+        $this->isCustomBaseCommand = true;
+
+        return $this;
+    }
+
+    public function isCustomBaseCommand(): bool
+    {
+        return $this->isCustomBaseCommand;
+    }
+
+    public function resolveTestBinary(): ?string
+    {
+        $pest = $this->projectRoot . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'pest';
+        if (file_exists($pest)) {
+            return $pest;
+        }
+
+        $artisan = $this->projectRoot . DIRECTORY_SEPARATOR . 'artisan';
+        if (file_exists($artisan)) {
+            return $artisan;
+        }
+
+        $phpunit = $this->projectRoot . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'phpunit';
+        if (file_exists($phpunit)) {
+            return $phpunit;
+        }
+
+        return null;
+    }
+
+    public function hasTestBinary(): bool
+    {
+        return $this->resolveTestBinary() !== null;
+    }
+
+    public function validateTestBinary(): void
+    {
+        if (! $this->hasTestBinary() && ! $this->isCustomBaseCommand) {
+            throw new \RuntimeException("No test runner binary (pest, phpunit, or artisan) found inside target project path [{$this->projectRoot}].");
+        }
     }
 
     public function getSchema(): array
@@ -106,6 +196,30 @@ class TestRunnerTool implements ToolContract
         }
 
         $command = $this->baseCommand;
+
+        if (! $this->isCustomBaseCommand) {
+            $binary = $this->resolveTestBinary();
+            if ($binary !== null) {
+                if (str_ends_with($binary, 'pest')) {
+                    $command = [PHP_BINARY, $binary];
+                } elseif (str_ends_with($binary, 'phpunit')) {
+                    $command = [PHP_BINARY, $binary];
+                } else {
+                    $command = [PHP_BINARY, 'artisan', 'test', '--without-tty'];
+                }
+            } else {
+                return [
+                    'passed' => false,
+                    'exit_code' => 127,
+                    'duration' => 0.0,
+                    'summary' => "No test runner (artisan, pest, phpunit) found in [{$this->projectRoot}].",
+                    'output' => "Test runner binary not found in [{$this->projectRoot}]. Ensure dependencies are installed or artisan exists.",
+                    'failures' => ["Test runner binary missing in {$this->projectRoot}"],
+                    'timed_out' => false,
+                    'dry_run' => false,
+                ];
+            }
+        }
 
         if (! empty($params['filter'])) {
             $filter = preg_replace('/[^a-zA-Z0-9_:\-]/', '', (string) $params['filter']);

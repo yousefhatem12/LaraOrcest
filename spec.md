@@ -4,41 +4,52 @@
 
 **Package:** `yousefhatem12/lara-orcest`\
 **Namespace:** `Yousef\LaraOrcest`\
-**Package type:** Standalone Laravel Composer package\
-**Purpose:** Bring prompt-driven, multi-agent orchestration into Laravel
-applications using PHP and Laravel conventions.
+**Package type:** Autonomous Standalone Control Plane & Laravel Tooling Package\
+**Purpose:** Provide an autonomous **Standalone Control Plane (`bin/lara-orcest`)** that sits **above Laravel**, manages an isolated target Laravel workspace (`target_path`), and orchestrates multi-agent development pipelines with specialized roles, stateful graph execution, automated testing, and safe Git workflows.
+
+`lara_orcest` operates in two complementary modes:
+- **Autonomous Standalone Control Plane (`standalone` mode - Primary):** Runs independently via `bin/lara-orcest` outside any host Laravel application. It connects to and directs an external target Laravel workspace (`target_path`), controlling file generation, Artisan commands, Composer runs, tests, and Git commits from the outside.
+- **Embedded Package (`embedded` mode - Compatible):** Functions inside an existing Laravel application container via `LaraOrcestServiceProvider`, Artisan commands (`php artisan orcest:build`), and facades for in-app integration.
 
 `lara_orcest` combines:
 
--   **Role-Based Multi-Agent Pod (CrewAI style):** A fixed roster of
-    specialized built-in agents. Each agent has an explicit role, goal,
-    backstory, allowed tools, and defined state output.
--   **Stateful Directed Graph with Bounded Loops (LangGraph style):** A
-    central `RunState` is passed across graph nodes. Conditional
-    transitions, test/review feedback loops, and step/retry guardrails
-    control execution.
--   **Safe Git & Test Execution:** Work is isolated on a dedicated Git
-    branch, committed at verified milestones, and validated with
-    automated tests (`php artisan test`). File paths and executable
-    commands are restricted.
+-   **Autonomous Control Plane Above Laravel:** Standalone CLI (`bin/lara-orcest`) powered by `LaraOrcestApplication`, `WorkspaceContext`, and standalone `OrchestratorConfig` reading project configurations without requiring a booted Laravel host container.
+-   **Role-Based Multi-Agent Pod (CrewAI style):** A fixed roster of specialized built-in agents and hierarchical sub-agent pods. Each agent has an explicit role, goal, backstory, allowed tools, and defined state output.
+-   **Stateful Directed Graph with Bounded Loops (LangGraph style):** A central `RunState` (holding `target_project_path`, `workspace_mode`, technical plan, artifacts, test outcomes, reviews, and guardrails) is passed across graph nodes with checkpoint resume support.
+-   **Strict Workspace Sandboxing & Safe Tool Execution:** PathGuard enforces strict sandboxing within `target_project_path`. Work is isolated on a dedicated Git branch, validated with automated tests (`php artisan test`), and verified before commits.
 
-The package should be provider-agnostic at the LLM layer, supporting
-OpenAI, Claude, Gemini, and local model providers through a common
-driver contract.
+The package is provider-agnostic at the LLM layer, supporting OpenAI-compatible proxies (LiteLLM, vLLM), Anthropic Claude, Google Gemini, Ollama, and OpenAI through a common driver contract.
 
-## 2. Package Repository & Laravel Integration Rules
+## 2. Package Repository & Workspace Architecture
 
 ### Repository
 
 -   Maintain `lara-orcest` in its **own standalone repository**.
--   Do not fork or clone `laravel/framework` or `laravel/laravel`.
--   Keep package source, tests, configuration, and Composer metadata
-    inside this repository.
+-   The repository provides both the standalone CLI binary (`bin/lara-orcest`) and the Laravel package adapters.
+-   Keep package source, standalone console application, tests, configuration, and Composer metadata inside this repository.
 
-### Local development
+### Standalone CLI Execution (Control Plane Above Laravel)
 
-Link the package to a fresh Laravel test application using a Composer
-path repository in the test application's `composer.json`:
+Install or run globally / via Composer:
+
+```bash
+# Initialize a workspace configuration pointing to a target Laravel project
+bin/lara-orcest init /path/to/my-laravel-app
+
+# Run prompt-driven orchestration against the target workspace
+bin/lara-orcest build "Implement REST API for invoice billing with Stripe webhooks" --target=/path/to/my-laravel-app
+
+# Dry-run preview without mutating files or Git
+bin/lara-orcest build "Add multi-tenant team management" --target=/path/to/my-laravel-app --dry-run
+
+# Inspect run state, delegation checkpoints, and target path
+bin/lara-orcest status
+bin/lara-orcest status <run_id>
+```
+
+### Local development with Target Laravel Application
+
+Link the package to a Laravel project or run directly against target directories:
 
 ``` json
 {
@@ -79,41 +90,53 @@ discovery metadata:
 ### Runtime targets
 
 -   PHP: `^8.2`
--   Laravel: `^11.0|^12.0`
+-   Laravel: `^11.0|^12.0` (for target workspaces or embedded usage)
+-   CLI: Standalone Symfony Console 7.0+ (`bin/lara-orcest`)
 
 ## 3. System Architecture
 
 ``` text
-+-------------------------------------------------------------------+
-|                     Entry Layer (CLI / Facade)                    |
-|   php artisan orcest:build "..."   |   Orchestrator::run(...)   |
-+---------------------------------+---------------------------------+
-                                  |
-                                  v
-+-------------------------------------------------------------------+
-|                  Graph & State Engine (LangGraph style)           |
-|  - Nodes (Agents/Steps)       - Edges (Conditional & Cyclic)      |
-|  - RunState (Shared Memory, Plan, Git, Artifacts, Tests, Guardrails)|
-|  - Checkpointer (DB / JSON persistence & resume)                  |
-+---------------------------------+---------------------------------+
-                                  |
-             +--------------------+--------------------+
-             |                                         |
-             v                                         v
-+-----------------------------------+     +-------------------------+
-|     Fixed Agent Roster (CrewAI)   |     |     Sandboxed Tools      |
-|  9 Built-in Agents with strict    | --> | - FileReaderTool        |
-|  Role, Goal, Backstory & Tools    |     | - PatchWriterTool       |
-+-----------------------------------+     | - ArtisanRunnerTool     |
-             |                           | - TestRunnerTool        |
-             +---------------------------| - GitCommandTool        |
-                                         +-------------------------+
-                                  |
-                                  v
-+-------------------------------------------------------------------+
-|                 LLM Driver Layer (OpenAI/Claude/Gemini/Local)     |
-|        Structured JSON Output + Token/Step/Retry Guardrails       |
-+-------------------------------------------------------------------+
++-------------------------------------------------------------------------+
+|     Autonomous Standalone Control Plane (bin/lara-orcest Above Laravel)  |
+|  - bin/lara-orcest init <project-dir>                                   |
+|  - bin/lara-orcest build "<prompt>" --target=<dir>                      |
+|  - bin/lara-orcest status [run_id]                                      |
+|  - WorkspaceContext & OrchestratorConfig (independent of host Laravel)  |
++------------------------------------+------------------------------------+
+                                     |
+                                     v
++-------------------------------------------------------------------------+
+|                  Graph & State Engine (LangGraph style)                 |
+|  - Nodes (Agents/Steps)       - Edges (Conditional & Cyclic)            |
+|  - RunState (target_project_path, workspace_mode, Guardrails, Memory)   |
+|  - Checkpointer (JSON / DB persistence & resume in workspace state)     |
++------------------------------------+------------------------------------+
+                                     |
+               +---------------------+---------------------+
+               |                                           |
+               v                                           v
++-------------------------------------+     +-----------------------------+
+|     Fixed Agent Roster (CrewAI)     |     |       Sandboxed Tools       |
+|  11 Built-in Agents + Sub-Agent Pods| --> | (Bounded to target_path)    |
+|  Role, Goal, Backstory & Tools      |     | - FileReaderTool            |
++-------------------------------------+     | - PatchWriterTool           |
+               |                            | - ArtisanRunnerTool         |
+               |                            | - TestRunnerTool            |
+               |                            | - GitCommandTool            |
+               |                            | - ComposerRunnerTool        |
+               |                            | - CodebaseInspectorTool     |
+               |                            +-----------------------------+
+               v                                           |
++-------------------------------------+                    |
+| LLM Drivers (OpenAI/Claude/Gemini)  |                    v
+| Structured JSON Output + Guardrails |     +-----------------------------+
++-------------------------------------+     |   Target Laravel Workspace  |
+                                            |   (target_path project root)|
+                                            |   - app/, database/, routes/|
+                                            |   - .lara-orcest/config.json|
+                                            |   - .lara-orcest/state/     |
+                                            |   - .lara-orcest/memory.json|
+                                            +-----------------------------+
 ```
 
 **Architecture type:** Hybrid Multi-Agent Pipeline + Bounded Feedback
@@ -188,16 +211,32 @@ the current `RunState`, and every cycle must be bounded.
 
 ``` text
 lara-orcest/
+├── bin/
+│   └── lara-orcest
 ├── composer.json
 ├── config/
 │   └── lara-orcest.php
 ├── src/
 │   ├── LaraOrcestServiceProvider.php
+│   ├── Orchestrator.php
+│   ├── Console/
+│   │   ├── LaraOrcestApplication.php
+│   │   └── Commands/
+│   │       ├── InitCommand.php
+│   │       ├── BuildCommand.php
+│   │       ├── StatusCommand.php
+│   │       └── ApproveCommand.php
+│   ├── Workspace/
+│   │   └── WorkspaceContext.php
+│   ├── Config/
+│   │   └── OrchestratorConfig.php
 │   ├── Facades/
 │   │   └── Orchestrator.php
 │   ├── Contracts/
 │   │   ├── AgentContract.php
+│   │   ├── CheckpointerContract.php
 │   │   ├── GraphNodeContract.php
+│   │   ├── ProjectMemoryContract.php
 │   │   ├── ToolContract.php
 │   │   ├── LlmDriverContract.php
 │   │   └── TaskDefinition.php
@@ -213,26 +252,43 @@ lara-orcest/
 │   │   ├── FixerAgent.php
 │   │   ├── ReviewerAgent.php
 │   │   ├── SwaggerAgent.php
-│   │   └── WebScrapingAgent.php
+│   │   ├── WebScrapingAgent.php
+│   │   ├── Pods/
+│   │   └── SubAgents/
 │   ├── Graph/
 │   │   ├── GraphEngine.php
 │   │   ├── EdgeRule.php
+│   │   ├── DefaultGraphBuilder.php
 │   │   └── Nodes/
 │   │       └── AgentGraphNode.php
 │   ├── State/
 │   │   ├── RunState.php
-│   │   └── StateCheckpointer.php
+│   │   ├── StateCheckpointer.php
+│   │   └── Drivers/
+│   │       ├── JsonCheckpointer.php
+│   │       └── DatabaseCheckpointer.php
+│   ├── Memory/
+│   │   └── ProjectMemoryStore.php
 │   ├── Tools/
+│   │   ├── Support/
+│   │   │   └── PathGuard.php
+│   │   ├── ToolRegistry.php
 │   │   ├── FileReaderTool.php
 │   │   ├── PatchWriterTool.php
 │   │   ├── ArtisanRunnerTool.php
+│   │   ├── ComposerRunnerTool.php
 │   │   ├── TestRunnerTool.php
-│   │   └── GitCommandTool.php
+│   │   ├── GitCommandTool.php
+│   │   ├── CodebaseInspectorTool.php
+│   │   ├── HttpFetchTool.php
+│   │   └── HttpDispatchTool.php
 │   ├── LLM/
-│   │   └── LlmManager.php
+│   │   ├── LlmManager.php
+│   │   └── Drivers/
 │   └── Commands/
 │       ├── OrcestBuildCommand.php
-│       └── OrcestStatusCommand.php
+│       ├── OrcestStatusCommand.php
+│       └── OrcestApproveCommand.php
 ├── database/
 │   └── migrations/
 └── tests/
@@ -256,6 +312,13 @@ state must serialize cleanly through `toArray()` and be restored through
 
   `status`                `string`                `running`, `paused`,
                                                   `completed`, or `failed`.
+
+  `target_project_path`   `?string`               Absolute or canonical path to
+                                                  managed target Laravel workspace.
+
+  `workspace_mode`        `string`                Workspace execution mode:
+                                                  `standalone` (control plane) or
+                                                  `embedded` (in-app).
 
   `requirements_spec`     `array`                 Functional/non-functional
                                                   requirements, domain
@@ -624,6 +687,35 @@ All filesystem-touching tools rely on `PathGuard` to enforce project boundary co
 - **State Synchronization:**
   - `applyToState(RunState $state, array $params)` updates `RunState::$gitState` with `feature_branch`, `branch_created`, `commits`, and `status`.
 
+### 7.7 `ComposerRunnerTool`
+
+- **Target Workspace Isolation:**
+  - Executes allow-listed Composer commands via `Process` inside `projectRoot` (`targetProjectPath` target Laravel directory).
+- **Allow-list Enforcement:**
+  - Allowed commands: `validate`, `show`, `audit`, `dump-autoload`, `dumpautoload`, `diagnose`, `check-platform-reqs`, `install`, `require`, `create-project`, `remove`, `update`.
+  - Blocks dangerous options (e.g. `--system`) and shell metacharacters.
+- **PathGuard Sandboxing & Secret Redaction:**
+  - Checks `--working-dir` and path parameters against `PathGuard` to prevent directory traversal.
+  - Redacts sensitive tokens, passwords, and encryption keys from command output and dry-run summaries.
+- **Dry-run Compliance:** Returns simulation payload in dry-run mode without spawning processes.
+
+### 7.8 `CodebaseInspectorTool`
+
+- **Target Inspection without Mutation:**
+  - Inspects models, migrations, routes, directory trees, and search symbols safely within target workspace.
+  - Governed by `PathGuard` sandboxing to guarantee zero host directory leakage.
+
+### 7.9 `DirectoryScaffolderTool`
+
+- **Sandboxed Directory & Starter File Creation:**
+  - Safely scaffolds directory hierarchies (e.g. modular `app/Domains/...` or standard `app/Models/...`) and initial starter files inside `targetProjectPath`.
+- **Strict Boundary Enforcement:**
+  - Evaluates all created directories and files against `PathGuard` and sub-agent `scopePaths`.
+  - Prevents directory traversal (`../`) and access to denied paths (`.env`, `.git`).
+- **Dry-run Preview & Secret Redaction:**
+  - When `dry_run` is active, previews planned directory creations without mutating disk.
+  - Automatically sanitizes and redacts secrets from summaries and generated content.
+
 ## 8. Graph Engine & Execution Semantics
 
 ### 8.1 Core Components
@@ -637,7 +729,7 @@ All filesystem-touching tools rely on `PathGuard` to enforce project boundary co
 ### 8.2 Graph Execution Flow & Transitions
 
 ```text
-business_analyst -> product_manager -> architect -> git_agent -> database_agent -> backend_agent -> qa_agent
+business_analyst -> product_manager -> architect -> git_agent -> package_manager_agent -> database_agent -> backend_agent -> qa_agent
                                                                                                         |
                                                             +-------------------------------------------+
                                                             |
@@ -1674,6 +1766,160 @@ The Quality, Docs & Release Pod ensures end-to-end reliability, API contract con
   - `ReviewerAgent` audits code, delegates to `swagger_agent` if OpenAPI docs are requested, and coordinates with `git_agent` for milestone commit upon approval.
 - When `lara-orcest.teams.enabled` is `false`:
   - `QaAgent` and `ReviewerAgent` fall back to single-agent execution loops.
+
+------------------------------------------------------------------------
+
+## 22. Phase B — PackageManager Pod Above Laravel (`package_manager_agent`, `laravel_installer_agent`, `dependency_resolver_agent`, `structure_scaffolder_agent`)
+
+### 22.1 Overview & Concept
+The **PackageManager Pod** manages the physical bootstrap and foundational setup of the external target Laravel workspace (`WorkspaceContext::$targetProjectPath`) before database models, migrations, or application code are written. Sitting above Laravel, the pod operates via `package_manager_agent` (Lead Agent) delegating sequentially through `TeamDelegator` to three specialized sub-agents:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                      PackageManager Pod                                │
+├────────────────────────────────────────────────────────────────────────┤
+│  Lead Agent: PackageManagerAgent (key: package_manager_agent)          │
+│  - Active Skills: laravel-project-bootstrapping,                       │
+│                   composer-dependency-management,                      │
+│                   laravel-directory-scaffolding                        │
+│  - Coordinates target project bootstrapping, dependencies, & layouts   │
+├────────────────────────────────────────────────────────────────────────┤
+│  Sub-Agent 1: LaravelInstallerAgent (key: laravel_installer_agent)     │
+│  - dependsOn: [] (Wave 0)                                              │
+│  - scopePaths: ['composer.json', '.env.example', 'artisan',            │
+│                 'bootstrap/**', 'config/**', 'public/**',              │
+│                 'storage/**', 'database/**']                           │
+│  - allowedTools: ['composer_runner', 'file_reader', 'patch_writer',    │
+│                   'artisan_runner', 'codebase_inspector']              │
+│  - Role: Bootstraps fresh Laravel skeleton if uninitialized, verifies  │
+│          pre-existing workspaces idempotently, and sets .env / APP_KEY │
+├────────────────────────────────────────────────────────────────────────┤
+│  Sub-Agent 2: DependencyResolverAgent (key: dependency_resolver_agent) │
+│  - dependsOn: ['laravel_installer_agent'] (Wave 1)                     │
+│  - scopePaths: ['composer.json', 'composer.lock']                      │
+│  - allowedTools: ['composer_runner', 'file_reader']                    │
+│  - Role: Validates package names/constraints and installs required     │
+│          Composer packages from technical plan                         │
+├────────────────────────────────────────────────────────────────────────┤
+│  Sub-Agent 3: StructureScaffolderAgent (key: structure_scaffolder_agent│
+│  - dependsOn: ['dependency_resolver_agent'] (Wave 2)                   │
+│  - scopePaths: ['app/**', 'routes/**', 'config/**', 'database/**']     │
+│  - allowedTools: ['directory_scaffolder', 'patch_writer',              │
+│                   'file_reader', 'codebase_inspector']                 │
+│  - Role: Scaffolds modular DDD (app/Domains/...) or standard Laravel   │
+│          directory trees and initial starter/route boilerplate         │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### 22.2 PackageManager Skills
+1. **`laravel-project-bootstrapping.md`:**
+   - Injected into `package_manager_agent` and `laravel_installer_agent`.
+   - Directs pre-flight target workspace inspection to ensure idempotency; skips destructive `create-project` if `composer.json` or `artisan` is present.
+   - Plans `composer create-project laravel/laravel . --prefer-dist --no-interaction` when uninitialized.
+   - Enforces safe environment defaults (`.env`) and secret redaction.
+2. **`composer-dependency-management.md`:**
+   - Injected into `package_manager_agent` and `dependency_resolver_agent`.
+   - Validates package names against standard `vendor/package` Packagist conventions.
+   - Differentiates runtime packages (`composer require <pkg>`) from dev tools (`composer require --dev <pkg>`).
+   - Simulates planned installation commands in `dry_run` mode without spawning processes.
+3. **`laravel-directory-scaffolding.md`:**
+   - Injected into `package_manager_agent` and `structure_scaffolder_agent`.
+   - Guides scaffolding of Domain-Driven Design modular layouts (`app/Domains/{Domain}/...`) or standard Laravel layouts.
+   - Enforces `PathGuard` and `scopePaths` to prevent directory traversal outside `targetProjectPath`.
+
+### 22.3 Scoped Tools: `ComposerRunnerTool` & `DirectoryScaffolderTool`
+- **`ComposerRunnerTool`:**
+  - Sandboxed execution of allow-listed Composer commands (`create-project`, `require`, `install`, `update`, `show`, `dump-autoload`, `validate`, `audit`).
+  - Strict validation of argument options, preventing path escapes via `--working-dir` through `PathGuard`.
+  - Secret redaction sanitizing credentials, tokens, API keys, and environment keys.
+- **`DirectoryScaffolderTool`:**
+  - Sandboxed directory hierarchy and starter file generation.
+  - Strict boundary checking with `PathGuard::resolveSafeDirectory` and `PathGuard::resolveSafePath`.
+  - Full `dry_run` preview support returning planned directories and files without disk mutation.
+
+### 22.4 Pipeline & State Integration
+- **Graph Pipeline Ordering:**
+  - Placed after architecture planning (`architect`) and git branch initialization (`git_agent`), and before database implementation (`database_agent`):
+    `architect -> git_agent -> package_manager_agent -> database_agent -> backend_agent -> qa_agent`
+  - When `lara-orcest.package_manager.enabled` is `false`, the graph routes directly from `git_agent` to `database_agent`.
+- **State Synchronization:**
+  - `RunState::$metadata['package_manager']` records `bootstrapped`, `installation` status, `packages`, `scaffolded_directories`, and `delegations`.
+  - Preserves 100% backward compatibility with `RunState::toArray()` and `RunState::fromArray()`.
+- **Single-Agent Fallback:**
+  - When `lara-orcest.teams.enabled` is `false`, `PackageManagerAgent` executes as a single unified agent performing bootstrap, package resolution, and directory scaffolding directly.
+
+------------------------------------------------------------------------
+
+## 23. Phase C — End-to-End Wiring of Database, Backend, QA, and Reviewer Pods Inside `targetProjectPath`
+
+### 23.1 Standalone Control Plane Execution Model
+`LaraOrcest` operates as a standalone control plane running above Laravel. All pipeline execution occurs against an external target Laravel workspace defined by `WorkspaceContext::$targetProjectPath`. The target workspace is passed explicitly via CLI (`bin/lara-orcest build --target=/path/to/project`) or resolved from the current working directory.
+
+```
++─────────────────────────────────────────────────────────────────────────────+
+│        LaraOrcest Standalone Control Plane (bin/lara-orcest)                │
+│                                                                             │
+│  [Discovery] ─► [Architecture] ─► [PackageManager] ─► [Database]           │
+│                                                            │                │
+│  [Reviewer] ◄────────────────────── [QA / Fix Loop] ◄──────┴──► [Backend]   │
++──────────────────────────────────────┬──────────────────────────────────────+
+                                       │ Scoped Tool Execution & Sandboxing
+                                       ▼
++─────────────────────────────────────────────────────────────────────────────+
+│                 Target Laravel Workspace (targetProjectPath)                │
+│  - database/migrations/           - app/Models/ & database/seeders/         │
+│  - app/Http/Requests/             - app/Actions/ & app/Services/            │
+│  - app/Http/Controllers/          - routes/api.php                          │
+│  - tests/Feature/ & tests/Unit/   - docs/swagger.json & .git/               │
++─────────────────────────────────────────────────────────────────────────────+
+```
+
+### 23.2 End-to-End Pod Wiring
+
+1. **Database Pod (`database_agent`):**
+   - **Lead Agent:** `DatabaseAgent` delegates subtasks across waves to `migration_agent`, `model_eloquent_agent`, and `seeder_agent`.
+   - **Context Propagation:** Supplies `target_project_path`, `workspace_mode`, `package_manager` metadata, and upstream schema specifications.
+   - **Outputs:** Reversible anonymous migrations (`database/migrations/`), Eloquent models with typed casts and relationships (`app/Models/`), and idempotent seeders (`database/seeders/`).
+   - **Path Normalization:** All generated artifacts stored in `RunState::$artifacts` are normalized relative to `targetProjectPath`.
+
+2. **Backend Pod (`backend_agent`):**
+   - **Lead Agent:** `BackendAgent` delegates to `request_validation_agent`, `service_action_agent`, and `controller_resource_agent`.
+   - **Context Propagation:** Reads upstream model artifacts, database schemas, and API contracts from `technical_plan`.
+   - **Outputs:** Strictly typed Form Requests (`app/Http/Requests/`), single-responsibility domain actions (`app/Actions/`), thin REST controllers (`app/Http/Controllers/`), and route definitions (`routes/api.php`).
+   - **Scope Enforcement:** Sub-agents operate strictly within their scoped path patterns (`app/Http/Requests/**`, `app/Actions/**`, `app/Http/Controllers/**`, `routes/**`).
+
+3. **QA Pod (`qa_agent`):**
+   - **Lead Agent:** `QaAgent` coordinates feature test generation and test runner validation against `targetProjectPath`.
+   - **Sub-Agent Delegation:** Delegates test authoring to `feature_test_agent`, verifying HTTP status codes, JSON structures, and database assertions.
+   - **Execution & Retry Coordination:** Runs `TestRunnerTool` against the target workspace. If graph execution includes a dedicated `fixer_agent` node, `QaAgent` defers retry loop management to `GraphEngine` (`graph_fixer_loop` metadata flag) while preserving local subagent fix loops during standalone agent runs.
+
+4. **Reviewer Pod (`reviewer_agent`):**
+   - **Lead Agent:** `ReviewerAgent` performs architectural compliance audits, security checks, and code quality reviews.
+   - **Helper Sub-Agents:** Delegates OpenAPI documentation to `swagger_agent` (`docs/swagger.json`) and version control finalization to `git_agent`.
+   - **Git Operations:** Finalizes the feature branch (`orcest/...`), stages target workspace artifacts, and prepares clean commit snapshots.
+
+### 23.3 Workspace-Scoped Tools & Binary Validation
+
+| Tool | Workspace Resolution & Sandboxing | Binary Validation & Safety |
+| :--- | :--- | :--- |
+| **`ArtisanRunnerTool`** | Resolves working directory to `targetProjectPath`. Validates target directory boundaries with `PathGuard`. | Checks for executable `artisan` script in `targetProjectPath`. Returns exit code 127 with diagnostic message when missing. Enforces command allow-list and HITL approval. |
+| **`TestRunnerTool`** | Executes test suites (`pest`, `phpunit`, `artisan test`) inside `targetProjectPath`. | Discovers target test binaries dynamically (`vendor/bin/pest`, `vendor/bin/phpunit`, `artisan`). Gracefully returns exit code 127 if neither binary is present. |
+| **`GitCommandTool`** | Resolves repository root to `targetProjectPath`. Auto-initializes repository when `git.auto_init = true` on uninitialized target workspaces. | Enforces command allow-list, protected branch guards (`main`, `master`, `production`), exclusive file locks (`.git/lara-orcest.lock`), and dirty-tree safety on branch switching. |
+| **`FileReaderTool`** | Resolves all relative file paths against `targetProjectPath`. | `PathGuard` blocks path traversal (`../`) and unauthorized reads outside workspace boundary. |
+| **`PatchWriterTool`** | Resolves target files relative to `targetProjectPath`. Enforces sub-agent `scopePaths()` via `ScopedToolProxy`. | Blocks writes outside target workspace. Simulates file mutations cleanly in `dry_run` mode without disk writes. |
+
+### 23.4 Pipeline Continuity, Checkpoint Resume & Single-Agent Fallback
+
+- **Checkpointer Continuity:**
+  - Persists state checkpoints directly into `targetProjectPath/.lara-orcest/state/{runId}.json`.
+  - Supports uninterrupted resumption via `bin/lara-orcest resume <run_id> --target=/path/to/project`.
+- **HITL Gate Continuity:**
+  - When pausing at Human-in-the-Loop review gates (e.g. `after_architect`), the checkpoint preserves the exact `targetProjectPath` and intermediate delegations. Resumption seamlessly continues to the next pod.
+- **Dry-Run Safety:**
+  - When `--dry-run` is active, all tools and sub-agents operate in simulation mode: `PatchWriterTool` returns `preview` actions, `GitCommandTool` simulates branch and commit actions, and `ComposerRunnerTool` plans commands without executing subprocesses.
+- **Single-Agent Fallback:**
+  - When `lara-orcest.teams.enabled` is `false`, `DatabaseAgent`, `BackendAgent`, `QaAgent`, and `ReviewerAgent` fall back cleanly to single-agent execution, generating migrations, models, actions, controllers, and tests directly without delegation overhead.
+
 
 
 

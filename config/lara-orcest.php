@@ -73,6 +73,7 @@ return [
             'reviewer_agent' => env('LARA_ORCEST_MODEL_REVIEWER_AGENT'),
             'web_scraping_agent' => env('LARA_ORCEST_MODEL_WEB_SCRAPING_AGENT'),
             'swagger_agent' => env('LARA_ORCEST_MODEL_SWAGGER_AGENT'),
+            'package_manager_agent' => env('LARA_ORCEST_MODEL_PACKAGE_MANAGER_AGENT'),
 
             // Discovery & Planning Pod Sub-Agents
             'domain_rules_agent' => env('LARA_ORCEST_MODEL_DOMAIN_RULES_AGENT'),
@@ -82,6 +83,11 @@ return [
             'ddd_boundary_agent' => env('LARA_ORCEST_MODEL_DDD_BOUNDARY_AGENT'),
             'schema_planner_agent' => env('LARA_ORCEST_MODEL_SCHEMA_PLANNER_AGENT'),
             'api_contract_agent' => env('LARA_ORCEST_MODEL_API_CONTRACT_AGENT'),
+
+            // Package Manager Pod Sub-Agents
+            'laravel_installer_agent' => env('LARA_ORCEST_MODEL_LARAVEL_INSTALLER_AGENT'),
+            'dependency_resolver_agent' => env('LARA_ORCEST_MODEL_DEPENDENCY_RESOLVER_AGENT'),
+            'structure_scaffolder_agent' => env('LARA_ORCEST_MODEL_STRUCTURE_SCAFFOLDER_AGENT'),
 
             // Database Pod Sub-Agents
             'migration_agent' => env('LARA_ORCEST_MODEL_MIGRATION_AGENT'),
@@ -275,6 +281,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Package Manager Pod & Workspace Bootstrapping
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for the PackageManager Pod (Lead Agent + Sub-Agents)
+    | to bootstrap fresh Laravel projects, install packages, and scaffold directories.
+    |
+    */
+    'package_manager' => [
+        'enabled' => (bool) env('LARA_ORCEST_PACKAGE_MANAGER_ENABLED', true),
+        'auto_bootstrap' => (bool) env('LARA_ORCEST_AUTO_BOOTSTRAP', true),
+        'composer_binary' => env('LARA_ORCEST_COMPOSER_BINARY', 'composer'),
+        'default_packages' => [],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Git Hygiene & Safety
     |--------------------------------------------------------------------------
     |
@@ -287,6 +309,7 @@ return [
         'protected_branches' => ['main', 'master', 'production', 'staging'],
         'auto_commit' => (bool) env('LARA_ORCEST_AUTO_COMMIT', true),
         'auto_push' => false,
+        'auto_init' => (bool) env('LARA_ORCEST_GIT_AUTO_INIT', true),
     ],
 
     /*

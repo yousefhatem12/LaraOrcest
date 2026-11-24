@@ -68,7 +68,7 @@ class CyclicFixLoopTest extends TestCase
             public function execute(array $params): array { return []; }
             public function getCurrentBranch(): array { return ['branch' => 'main', 'dry_run' => false]; }
             public function getStatus(): array { return ['clean' => true, 'branch' => 'main', 'modified' => [], 'untracked' => []]; }
-            public function createBranch(string $b): array { return ['branch' => $b, 'created' => true]; }
+            public function createBranch(string $b, bool $allowDirty = false): array { return ['branch' => $b, 'created' => true]; }
             public function setDryRun(bool $d): void {}
         };
 

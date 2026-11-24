@@ -87,8 +87,12 @@ class GitAgent extends AbstractAgent
 
         // If not already on the feature branch, create it
         if ($current['branch'] !== $proposedBranch) {
-            $createRes = $gitTool->createBranch($proposedBranch);
-            $featureBranch = $createRes['branch'];
+            try {
+                $createRes = $gitTool->createBranch($proposedBranch, true);
+            } catch (\ArgumentCountError) {
+                $createRes = $gitTool->createBranch($proposedBranch);
+            }
+            $featureBranch = $createRes['branch'] ?? $proposedBranch;
             $branchCreated = (bool) ($createRes['created'] ?? false);
         }
 

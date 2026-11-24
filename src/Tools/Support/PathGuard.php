@@ -6,6 +6,7 @@ namespace Yousef\LaraOrcest\Tools\Support;
 
 use RuntimeException;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class PathGuard
 {
@@ -18,15 +19,31 @@ class PathGuard
 
     protected int $maxFileSize;
 
+    protected ?WorkspaceContext $workspaceContext = null;
+
     /**
      * @param  array<int, string>|null  $denyPatterns
      */
-    public function __construct(?string $projectRoot = null, ?array $denyPatterns = null, int $maxFileSize = 1_000_000)
-    {
-        $rootConfig = Config::get('lara-orcest.tools.project_root', Config::get('lara-orcest.sandbox.project_root'));
-        $this->projectRoot = $this->canonicalizeRoot($projectRoot ?: ($rootConfig ?: Config::basePath()));
+    public function __construct(
+        ?string $projectRoot = null,
+        ?array $denyPatterns = null,
+        int $maxFileSize = 1_000_000,
+        ?WorkspaceContext $workspaceContext = null
+    ) {
+        $this->workspaceContext = $workspaceContext;
 
-        $configuredDeny = Config::get('lara-orcest.tools.deny_paths', Config::get('lara-orcest.sandbox.deny_paths'));
+        $rootConfig = $workspaceContext?->getConfig()->get('tools.project_root', $workspaceContext?->getConfig()->get('sandbox.project_root'))
+            ?: Config::get('lara-orcest.tools.project_root', Config::get('lara-orcest.sandbox.project_root'));
+
+        $effectiveRoot = $projectRoot
+            ?: ($workspaceContext?->getTargetProjectPath()
+            ?: ($rootConfig ?: Config::basePath()));
+
+        $this->projectRoot = $this->canonicalizeRoot($effectiveRoot);
+
+        $configuredDeny = $workspaceContext?->getConfig()->get('tools.deny_paths', $workspaceContext?->getConfig()->get('sandbox.deny_paths'))
+            ?: Config::get('lara-orcest.tools.deny_paths', Config::get('lara-orcest.sandbox.deny_paths'));
+
         $defaultDeny = [
             '.env',
             '.env.*',
@@ -43,8 +60,23 @@ class PathGuard
 
         $this->denyPatterns = $denyPatterns ?: (array) ($configuredDeny ?: $defaultDeny);
 
-        $maxSizeConfig = Config::get('lara-orcest.tools.max_read_size', Config::get('lara-orcest.sandbox.max_file_size'));
+        $maxSizeConfig = $workspaceContext?->getConfig()->get('tools.max_read_size', $workspaceContext?->getConfig()->get('sandbox.max_file_size'))
+            ?: Config::get('lara-orcest.tools.max_read_size', Config::get('lara-orcest.sandbox.max_file_size'));
+
         $this->maxFileSize = $maxSizeConfig ? (int) $maxSizeConfig : $maxFileSize;
+    }
+
+    public function getWorkspaceContext(): ?WorkspaceContext
+    {
+        return $this->workspaceContext;
+    }
+
+    public function setWorkspaceContext(WorkspaceContext $context): self
+    {
+        $this->workspaceContext = $context;
+        $this->projectRoot = $this->canonicalizeRoot($context->getTargetProjectPath());
+
+        return $this;
     }
 
     public function getProjectRoot(): string
@@ -64,6 +96,24 @@ class PathGuard
         $canonicalPath = $this->buildCanonicalPath($path);
         $relativePath = $this->getRelativePath($canonicalPath);
 
+        // Symlink escape check (evaluated before denylist to prevent symlink traversal outside sandbox)
+        if (file_exists($canonicalPath) || is_link($canonicalPath)) {
+            $real = realpath($canonicalPath);
+            if ($real === false || ! str_starts_with($real, $this->projectRoot)) {
+                throw new RuntimeException("Symlink escape detected for path: [{$canonicalPath}]");
+            }
+        } elseif ($mustExist) {
+            throw new RuntimeException("Target file does not exist: [{$canonicalPath}]");
+        } else {
+            $parent = dirname($canonicalPath);
+            if (file_exists($parent)) {
+                $realParent = realpath($parent);
+                if ($realParent === false || ! str_starts_with($realParent, $this->projectRoot)) {
+                    throw new RuntimeException("Symlink escape detected for path: [{$canonicalPath}]");
+                }
+            }
+        }
+
         // Check denylist patterns
         if ($this->isDenied($relativePath) || $this->isDenied(basename($canonicalPath))) {
             throw new RuntimeException("Access to denied path pattern blocked: [{$relativePath}]");
@@ -73,16 +123,6 @@ class PathGuard
         if (! empty($allowedPrefixes) && ! $this->matchesAllowedPrefixes($relativePath, $allowedPrefixes)) {
             $allowedList = implode(', ', $allowedPrefixes);
             throw new RuntimeException("Path [{$relativePath}] is outside allowed scope: [{$allowedList}]");
-        }
-
-        // Symlink escape check
-        if (file_exists($canonicalPath)) {
-            $real = realpath($canonicalPath);
-            if ($real === false || ! str_starts_with($real, $this->projectRoot)) {
-                throw new RuntimeException("Symlink escape detected for path: [{$canonicalPath}]");
-            }
-        } elseif ($mustExist) {
-            throw new RuntimeException("Target file does not exist: [{$canonicalPath}]");
         }
 
         return $canonicalPath;
@@ -100,16 +140,8 @@ class PathGuard
         $canonicalPath = $this->buildCanonicalPath($path);
         $relativePath = $this->getRelativePath($canonicalPath);
 
-        if ($this->isDenied($relativePath) || $this->isDenied(basename($canonicalPath))) {
-            throw new RuntimeException("Access to denied directory pattern blocked: [{$relativePath}]");
-        }
-
-        if (! empty($allowedPrefixes) && ! $this->matchesAllowedPrefixes($relativePath, $allowedPrefixes)) {
-            $allowedList = implode(', ', $allowedPrefixes);
-            throw new RuntimeException("Directory [{$relativePath}] is outside allowed scope: [{$allowedList}]");
-        }
-
-        if (file_exists($canonicalPath)) {
+        // Symlink escape check
+        if (file_exists($canonicalPath) || is_link($canonicalPath)) {
             $real = realpath($canonicalPath);
             if ($real === false || ! str_starts_with($real, $this->projectRoot)) {
                 throw new RuntimeException("Symlink escape detected for directory: [{$canonicalPath}]");
@@ -119,6 +151,23 @@ class PathGuard
             }
         } elseif ($mustExist) {
             throw new RuntimeException("Target directory does not exist: [{$canonicalPath}]");
+        } else {
+            $parent = dirname($canonicalPath);
+            if (file_exists($parent)) {
+                $realParent = realpath($parent);
+                if ($realParent === false || ! str_starts_with($realParent, $this->projectRoot)) {
+                    throw new RuntimeException("Symlink escape detected for directory: [{$canonicalPath}]");
+                }
+            }
+        }
+
+        if ($this->isDenied($relativePath) || $this->isDenied(basename($canonicalPath))) {
+            throw new RuntimeException("Access to denied directory pattern blocked: [{$relativePath}]");
+        }
+
+        if (! empty($allowedPrefixes) && ! $this->matchesAllowedPrefixes($relativePath, $allowedPrefixes)) {
+            $allowedList = implode(', ', $allowedPrefixes);
+            throw new RuntimeException("Directory [{$relativePath}] is outside allowed scope: [{$allowedList}]");
         }
 
         return $canonicalPath;

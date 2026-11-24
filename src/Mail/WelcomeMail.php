@@ -19,7 +19,7 @@ class WelcomeMail extends Mailable
 
     public function build(): self
     {
-        $appName = config('app.name', 'LaraOrcest');
+        $appName = (string) \Yousef\LaraOrcest\Support\Config::get('app.name', 'LaraOrcest');
         $subjects = [
             'zh' => "欢迎加入 {$appName}！",
             'hi' => "{$appName} में आपका स्वागत है!",

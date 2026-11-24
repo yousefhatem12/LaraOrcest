@@ -274,6 +274,7 @@ abstract class AbstractAgent implements AgentContract
         }
 
         return new \Yousef\LaraOrcest\Agents\Teams\TeamDelegator(
+            subAgentRegistry: \Yousef\LaraOrcest\Agents\Teams\SubAgentRegistry::createDefault(),
             skillRegistry: $this->getSkillRegistry()
         );
     }
