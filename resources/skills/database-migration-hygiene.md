@@ -3,6 +3,7 @@ name: database-migration-hygiene
 description: Best practices for creating reversible migrations, foreign keys, indexes, and Eloquent relationships.
 agents:
   - database_agent
+  - migration_agent
   - architect
   - backend_agent
 allowed_tools:

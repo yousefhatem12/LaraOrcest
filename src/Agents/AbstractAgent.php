@@ -224,6 +224,45 @@ abstract class AbstractAgent implements AgentContract
     }
 
     /**
+     * Default skills declared directly on this lead agent class.
+     *
+     * @return array<int, string>
+     */
+    protected function getDefaultSkills(): array
+    {
+        return [];
+    }
+
+    /**
+     * Dedicated skills assigned to this lead agent.
+     *
+     * @return array<int, string>
+     */
+    public function getSkills(): array
+    {
+        $configSkills = (array) Config::get("lara-orcest.skills.agent_skills.{$this->getName()}", []);
+        if (! empty($configSkills)) {
+            return array_values(array_filter($configSkills, 'is_string'));
+        }
+
+        $defaults = $this->getDefaultSkills();
+        if (! empty($defaults)) {
+            return $defaults;
+        }
+
+        try {
+            $matched = array_keys($this->getSkillRegistry()->getForAgent($this->getName()));
+            if (! empty($matched)) {
+                return $matched;
+            }
+        } catch (\Throwable) {
+            // fallback gracefully
+        }
+
+        return [];
+    }
+
+    /**
      * Resolves active skills applicable to this agent.
      *
      * @return array<string, Skill>
@@ -232,6 +271,9 @@ abstract class AbstractAgent implements AgentContract
     {
         $registry = $this->getSkillRegistry();
         $requested = (array) ($state->metadata['active_skills'] ?? []);
+        if (empty($requested)) {
+            $requested = $this->getSkills();
+        }
 
         return $registry->resolveActiveSkills($this->getName(), $requested);
     }

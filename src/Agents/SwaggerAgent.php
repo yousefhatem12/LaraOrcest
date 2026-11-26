@@ -47,6 +47,14 @@ class SwaggerAgent extends AbstractAgent
         return 'artifacts';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return [
+            'openapi-swagger-spec',
+            'rest-api-contract-design',
+        ];
+    }
+
     /**
      * Executes the agent's turn, capturing authorized tools for prompt inspection.
      *

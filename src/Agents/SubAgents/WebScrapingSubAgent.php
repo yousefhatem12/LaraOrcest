@@ -59,6 +59,11 @@ class WebScrapingSubAgent extends AbstractSubAgent
         return [];
     }
 
+    public function skills(): array
+    {
+        return ['two-site-scraping-dispatch'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
         $resolved = $this->resolveUrlsAndEndpoint($state);

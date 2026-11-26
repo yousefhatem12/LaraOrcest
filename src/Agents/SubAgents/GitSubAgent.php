@@ -52,6 +52,11 @@ class GitSubAgent extends AbstractSubAgent
         return [];
     }
 
+    public function skills(): array
+    {
+        return ['safe-git-release'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
         $prompt = (string) ($context['prompt'] ?? $state->prompt);

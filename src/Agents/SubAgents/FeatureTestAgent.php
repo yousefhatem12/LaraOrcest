@@ -50,6 +50,11 @@ class FeatureTestAgent extends AbstractSubAgent
         return [];
     }
 
+    public function skills(): array
+    {
+        return ['laravel-feature-testing'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
         $backlogJson = json_encode($context['backlog'] ?? $state->backlog, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

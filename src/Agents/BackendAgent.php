@@ -41,6 +41,15 @@ class BackendAgent extends AbstractAgent
         return 'artifacts';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return [
+            'laravel-form-requests-authorization',
+            'service-action-workflows',
+            'controllers-resources-routes',
+        ];
+    }
+
     public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
     {
         $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);

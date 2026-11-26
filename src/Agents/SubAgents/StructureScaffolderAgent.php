@@ -7,6 +7,8 @@ namespace Yousef\LaraOrcest\Agents\SubAgents;
 use Yousef\LaraOrcest\Agents\Teams\AbstractSubAgent;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\TerminalAnnouncer;
 use Yousef\LaraOrcest\Tools\DirectoryScaffolderTool;
 
 class StructureScaffolderAgent extends AbstractSubAgent
@@ -61,15 +63,24 @@ class StructureScaffolderAgent extends AbstractSubAgent
         return ['dependency_resolver_agent'];
     }
 
+    public function skills(): array
+    {
+        return ['laravel-directory-scaffolding'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
+        $promptSpec = (string) ($context['prompt'] ?? $state->prompt);
         $planJson = json_encode($context['technical_plan'] ?? $state->technicalPlan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         $specJson = json_encode($context['requirements_spec'] ?? $state->requirementsSpec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $targetPath = (string) ($context['target_project_path'] ?? $state->targetProjectPath ?? Config::basePath());
 
-        return "TECHNICAL PLAN:\n{$planJson}\n\n" .
+        return "USER PROMPT / TASK SPECIFICATION:\n{$promptSpec}\n\n" .
+            "TARGET PROJECT PATH: {$targetPath}\n\n" .
+            "TECHNICAL PLAN:\n{$planJson}\n\n" .
             "REQUIREMENTS SPECIFICATION:\n{$specJson}\n\n" .
             "Scaffold the required directories and base boilerplate files for the application:\n" .
-            "1. Align with modular DDD (app/Domains/{Domain}/...) or standard Laravel layouts according to the technical plan.\n" .
+            "1. Align with modular DDD (app/Domains/{Domain}/...) or standard Laravel layouts according to the prompt and technical plan.\n" .
             "2. Provide relative directory paths within allowed scope (app/**, routes/**, config/**, database/**).\n" .
             "3. Optionally provide starter files (e.g. domain README, starter service provider, or route files).\n" .
             "4. Ensure all created code follows PSR-12 and strict typing.";
@@ -124,6 +135,19 @@ class StructureScaffolderAgent extends AbstractSubAgent
         $directories = (array) ($output['directories'] ?? []);
         $files = (array) ($output['files'] ?? []);
 
+        if (! empty($directories) || ! empty($files)) {
+            $targetPath = $state->targetProjectPath ?? Config::basePath();
+            TerminalAnnouncer::announce("  [structure_scaffolder_agent] Scaffolding directory structure in [{$targetPath}]:");
+            foreach ($directories as $dir) {
+                TerminalAnnouncer::announce("  [structure_scaffolder_agent] -> Target Directory: {$dir}");
+            }
+            foreach ($files as $file) {
+                if (! empty($file['path'])) {
+                    TerminalAnnouncer::announce("  [structure_scaffolder_agent] -> Target File: {$file['path']}");
+                }
+            }
+        }
+
         $result = $scaffolder->execute([
             'directories' => $directories,
             'files' => $files,
@@ -153,6 +177,7 @@ class StructureScaffolderAgent extends AbstractSubAgent
             'output' => array_merge($output, [
                 'scaffolded_directories' => $result['created_directories'] ?? $directories,
                 'scaffolded_files' => $result['created_files'] ?? [],
+                'prompt_specification' => $state->prompt,
             ]),
             'artifacts' => $artifacts,
         ];

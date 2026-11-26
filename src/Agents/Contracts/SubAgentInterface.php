@@ -57,6 +57,13 @@ interface SubAgentInterface
     public function dependsOn(): array;
 
     /**
+     * Dedicated skills assigned to this sub-agent.
+     *
+     * @return array<int, string>
+     */
+    public function skills(): array;
+
+    /**
      * Executes the sub-agent's task with scoped tools, active skills, and state context.
      *
      * @param  array<string, ToolContract>  $tools  Scoped and authorized tools for this sub-agent

@@ -50,6 +50,11 @@ class FixerSubAgent extends AbstractSubAgent
         return ['feature_test_agent'];
     }
 
+    public function skills(): array
+    {
+        return ['root-cause-test-fixing'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
         $testResults = json_encode($context['test_results'] ?? $state->testResults, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

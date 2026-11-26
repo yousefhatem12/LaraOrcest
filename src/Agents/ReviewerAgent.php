@@ -41,6 +41,15 @@ class ReviewerAgent extends AbstractAgent
         return 'reviews';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return [
+            'openapi-swagger-spec',
+            'safe-git-release',
+            'laravel-strict-standards',
+        ];
+    }
+
     public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
     {
         $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);

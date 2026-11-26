@@ -42,6 +42,14 @@ class QaAgent extends AbstractAgent
         return 'test_results';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return [
+            'laravel-feature-testing',
+            'root-cause-test-fixing',
+        ];
+    }
+
     public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
     {
         $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);

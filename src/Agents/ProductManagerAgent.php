@@ -40,6 +40,11 @@ class ProductManagerAgent extends AbstractAgent
         return 'backlog';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return ['backlog-task-decomposition'];
+    }
+
     public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
     {
         $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);

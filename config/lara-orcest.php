@@ -194,6 +194,39 @@ return [
         'max_active_skills' => (int) env('LARA_ORCEST_MAX_ACTIVE_SKILLS', 5),
         'path' => env('LARA_ORCEST_SKILLS_PATH', null),
         'custom_path' => env('LARA_ORCEST_CUSTOM_SKILLS_PATH', '.lara-orcest/skills'),
+
+        'agent_skills' => [
+            // Lead Agents
+            'business_analyst' => ['business-requirements-analysis'],
+            'product_manager' => ['backlog-task-decomposition'],
+            'architect' => ['laravel-modular-ddd-architecture', 'relational-schema-indexing', 'rest-api-contract-design'],
+            'package_manager_agent' => ['laravel-project-bootstrapping', 'composer-dependency-management', 'laravel-directory-scaffolding'],
+            'database_agent' => ['laravel-safe-migrations', 'eloquent-models-and-factories', 'idempotent-database-seeders'],
+            'backend_agent' => ['laravel-form-requests-authorization', 'service-action-workflows', 'controllers-resources-routes'],
+            'qa_agent' => ['laravel-feature-testing', 'root-cause-test-fixing'],
+            'fixer_agent' => ['root-cause-test-fixing', 'laravel-strict-standards', 'scoped-file-editing'],
+            'reviewer_agent' => ['openapi-swagger-spec', 'safe-git-release', 'laravel-strict-standards'],
+            'web_scraping_agent' => ['two-site-scraping-dispatch'],
+            'swagger_agent' => ['openapi-swagger-spec', 'rest-api-contract-design'],
+            'git_agent' => ['safe-git-release', 'scoped-file-editing'],
+
+            // Sub-Agents
+            'domain_rules_agent' => ['business-requirements-analysis'],
+            'backlog_splitter_agent' => ['backlog-task-decomposition'],
+            'api_contract_agent' => ['rest-api-contract-design'],
+            'ddd_boundary_agent' => ['laravel-modular-ddd-architecture'],
+            'schema_planner_agent' => ['relational-schema-indexing'],
+            'laravel_installer_agent' => ['laravel-project-bootstrapping'],
+            'dependency_resolver_agent' => ['composer-dependency-management'],
+            'structure_scaffolder_agent' => ['laravel-directory-scaffolding'],
+            'migration_agent' => ['laravel-safe-migrations', 'database-migration-hygiene'],
+            'model_eloquent_agent' => ['eloquent-models-and-factories'],
+            'seeder_agent' => ['idempotent-database-seeders'],
+            'request_validation_agent' => ['laravel-form-requests-authorization'],
+            'service_action_agent' => ['service-action-workflows'],
+            'controller_resource_agent' => ['controllers-resources-routes'],
+            'feature_test_agent' => ['laravel-feature-testing'],
+        ],
     ],
 
     /*
@@ -291,6 +324,7 @@ return [
     'package_manager' => [
         'enabled' => (bool) env('LARA_ORCEST_PACKAGE_MANAGER_ENABLED', true),
         'auto_bootstrap' => (bool) env('LARA_ORCEST_AUTO_BOOTSTRAP', true),
+        'default_laravel_version' => env('LARA_ORCEST_LARAVEL_VERSION', '^11.0|^12.0'),
         'composer_binary' => env('LARA_ORCEST_COMPOSER_BINARY', 'composer'),
         'default_packages' => [],
     ],

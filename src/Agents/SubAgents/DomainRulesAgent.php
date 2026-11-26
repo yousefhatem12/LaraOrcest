@@ -50,6 +50,11 @@ class DomainRulesAgent extends AbstractSubAgent
         return [];
     }
 
+    public function skills(): array
+    {
+        return ['business-requirements-analysis'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
         $prompt = (string) ($context['prompt'] ?? $state->prompt);

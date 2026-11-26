@@ -48,6 +48,13 @@ class WebScrapingAgent extends AbstractAgent
         return 'scraping_results';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return [
+            'two-site-scraping-dispatch',
+        ];
+    }
+
     public function execute(RunState $state, array $tools, \Yousef\LaraOrcest\Contracts\LlmDriverContract $llm): RunState
     {
         // If scraping results are already present (e.g. executed via pod delegation), return existing state

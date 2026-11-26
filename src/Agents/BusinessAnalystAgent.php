@@ -40,6 +40,11 @@ class BusinessAnalystAgent extends AbstractAgent
         return 'requirements_spec';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return ['business-requirements-analysis'];
+    }
+
     public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
     {
         $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);

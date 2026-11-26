@@ -32,6 +32,23 @@ If you plan to use LaraOrcest exclusively for development, prototyping, and auto
 composer require yousefhatem12/lara-orcest --dev
 ```
 
+### CLI Execution Modes
+
+Once installed via `composer require yousefhatem12/lara-orcest` (or `--dev`), you can operate LaraOrcest using either:
+1. **The Standalone Control-Plane CLI (`vendor/bin/lara-orcest`):** `./vendor/bin/lara-orcest build "Prompt..."`
+2. **The Embedded Artisan Command:** `php artisan orcest:build "Prompt..."`
+
+You can also run LaraOrcest from a cloned standalone repository above any external target Laravel application via `bin/lara-orcest`:
+```bash
+git clone https://github.com/yousefhatem12/LaraOrcest.git
+cd LaraOrcest && composer install
+bin/lara-orcest init /path/to/my-laravel-app
+bin/lara-orcest build "Add multi-tenant workspace isolation" --target=/path/to/my-laravel-app
+```
+
+> [!TIP]
+> Before `PackageManager` installs Laravel or any Composer dependencies in `targetProjectPath`, it prints the exact target Laravel version and package version constraints (plus the driving prompt specification) to the terminal. Use `--dry-run` to preview without modifying disk, `--interactive` to pause at Human-in-the-Loop gates, or `--no-human-review` to run autonomously.
+
 ### Pre-Release & Development Alternatives
 
 #### Option A: Local Development via Composer `path` Repository
@@ -279,6 +296,7 @@ php artisan orcest:approve run_67e199f1a0b34 --note="Approved"
 
 | Option | Description |
 | :--- | :--- |
+| `--target=/path/to/app` | Path to the external target Laravel workspace (`targetProjectPath`). |
 | `--prompt="Your prompt"` | Prompt string (alternative to argument). |
 | `--dry-run` | Previews changes without touching the filesystem or Git. |
 | `--interactive` | Enables interactive Human-in-the-Loop review gates. |

@@ -50,6 +50,11 @@ class BacklogSplitterAgent extends AbstractSubAgent
         return [];
     }
 
+    public function skills(): array
+    {
+        return ['backlog-task-decomposition'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
         $spec = $context['requirements_spec'] ?? $state->requirementsSpec;

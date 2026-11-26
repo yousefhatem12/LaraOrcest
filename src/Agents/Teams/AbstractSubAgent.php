@@ -39,6 +39,16 @@ abstract class AbstractSubAgent implements SubAgentInterface
     }
 
     /**
+     * Dedicated skills assigned to this sub-agent.
+     *
+     * @return array<int, string>
+     */
+    public function skills(): array
+    {
+        return (array) Config::get("lara-orcest.skills.agent_skills.{$this->key()}", []);
+    }
+
+    /**
      * Resolve model override for this sub-agent.
      * Order of precedence:
      * 1. Explicit sub-agent override in config (llm.agent_models.<sub_agent_key>)

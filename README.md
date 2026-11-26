@@ -124,6 +124,7 @@ In modern software development, writing high-quality Laravel features requires m
 | **`web_scraping_agent`** | Intelligent Web Scraping & Ingestion Specialist | Extracts and normalizes data from target website URLs and dispatches unified payloads to destination endpoints. | `file_reader` | `scraping_results` |
 | **`architect`** | Senior Laravel Software Architect | Designs clean, idiomatic architecture mapping tasks to migrations, models, controllers, requests, routes, and tests. | `file_reader`, `codebase_inspector` | `technical_plan` |
 | **`git_agent`** | Source Control & Release Hygiene Agent | Creates and isolates changes on a feature branch (`orcest/...`), verifies clean working trees, and manages milestone commits. | `git_command` | `git_state` |
+| **`package_manager_agent`** | Laravel Package Manager & Project Bootstrapper | Discloses target Laravel/package versions in terminal, bootstraps fresh Laravel skeletons, installs Composer packages, and scaffolds directories inside `targetProjectPath`. | `composer_runner`, `directory_scaffolder`, `file_reader`, `patch_writer`, `codebase_inspector`, `artisan_runner` | `artifacts`, `metadata.package_manager` |
 | **`database_agent`** | Laravel Database & Eloquent Specialist | Generates normalized migrations, factories, relationships, and Eloquent models scoped to `database/` and `app/Models/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` |
 | **`backend_agent`** | Laravel Backend & API Engineer | Implements form requests, controllers, actions, and API routes scoped to `app/`, `routes/`, and `config/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` |
 | **`swagger_agent`** | Laravel Swagger & OpenAPI Documentation Specialist | Generates comprehensive OpenAPI 3.0+ / Swagger specifications (JSON/YAML) and endpoints documentation scoped to `docs/` and `storage/api-docs/`. | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts`, `metadata.swagger_documentation` |
@@ -306,7 +307,7 @@ bin/lara-orcest build "Implement invoice billing with Stripe webhooks" --target=
 bin/lara-orcest build "Add multi-tenant team management" --target=/path/to/target-laravel-app --dry-run
 
 # 4. Resume an interrupted or paused run
-bin/lara-orcest resume <run_id> --target=/path/to/target-laravel-app
+bin/lara-orcest build --resume=<run_id> --target=/path/to/target-laravel-app
 
 # 5. Inspect execution status, checkpoints, and delegations
 bin/lara-orcest status
@@ -315,25 +316,51 @@ bin/lara-orcest status <run_id>
 
 ---
 
-## Installation & Setup (Embedded Mode)
+## Installation & Setup
 
-When embedding LaraOrcest directly into an existing Laravel application container:
+`LaraOrcest` can be installed as a Composer dependency or operated as a standalone repository above your Laravel applications.
 
 ### 1. Standard Installation (via Composer & Packagist)
 
-Install `LaraOrcest` into your Laravel application using Composer:
+Install `LaraOrcest` into your Laravel application or development tooling using Composer:
 
 ```bash
 composer require yousefhatem12/lara-orcest
 ```
 
-If you only plan to use LaraOrcest during local development and testing:
+If you plan to use `LaraOrcest` exclusively for development, prototyping, and automated feature delivery:
 
 ```bash
 composer require yousefhatem12/lara-orcest --dev
 ```
 
-### 2. Publish Configuration & Migrations
+Once installed, the standalone control-plane CLI binary is immediately available at `vendor/bin/lara-orcest`:
+
+```bash
+# Initialize workspace config (.lara-orcest/)
+./vendor/bin/lara-orcest init
+
+# Orchestrate a feature against your application
+./vendor/bin/lara-orcest build "Create an invoice billing API with Stripe webhooks"
+```
+
+### 2. Standalone Control Plane Repository (Managing External Projects)
+
+You can also run `LaraOrcest` completely separate from your target application as a dedicated control plane:
+
+```bash
+git clone https://github.com/yousefhatem12/LaraOrcest.git
+cd LaraOrcest
+composer install
+
+# Point directly to any external Laravel project on your machine
+bin/lara-orcest init /path/to/target-laravel-app
+bin/lara-orcest build "Build multi-tenant Task API" --target=/path/to/target-laravel-app
+```
+
+### 3. Publish Configuration & Migrations (When Embedded)
+
+When embedding inside a host Laravel application container:
 
 Publish the package configuration file to `config/lara-orcest.php`:
 
@@ -348,7 +375,7 @@ php artisan vendor:publish --tag=lara-orcest-migrations
 php artisan migrate
 ```
 
-### 3. Pre-Release & Local Development Alternatives
+### 4. Pre-Release & Local Development Alternatives
 
 If you are developing against or testing `LaraOrcest` locally or before its initial Packagist index:
 
@@ -539,7 +566,7 @@ php artisan orcest:status run_a1b2c3d4e5f6
 
 ---
 
-### 2. Programmatic Usage via Facade (`Orcest` or `Orchestrator`)
+### 3. Programmatic Usage via Facade (`Orcest` or `Orchestrator`)
 
 ```php
 use Yousef\LaraOrcest\Facades\Orcest;

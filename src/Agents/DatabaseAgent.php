@@ -41,6 +41,15 @@ class DatabaseAgent extends AbstractAgent
         return 'artifacts';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return [
+            'laravel-safe-migrations',
+            'eloquent-models-and-factories',
+            'idempotent-database-seeders',
+        ];
+    }
+
     public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
     {
         $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);

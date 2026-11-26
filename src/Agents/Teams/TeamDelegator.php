@@ -115,9 +115,10 @@ class TeamDelegator
                 $modelToUse = $subAgent->resolveModel($parentModel !== '' ? $parentModel : null);
 
                 // 2. Resolve active skills for this sub-agent (supports sub-agent key and parent lead agent)
+                $requestedForSub = array_values(array_unique(array_merge($activeSkillNames, $subAgent->skills())));
                 $subSkills = $this->skillRegistry->resolveActiveSkills(
                     agentKey: $subAgent->key(),
-                    requestedNames: $activeSkillNames,
+                    requestedNames: $requestedForSub,
                     parentAgentKey: $subAgent->parentAgentKey()
                 );
 

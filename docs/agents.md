@@ -17,8 +17,9 @@ Each agent possesses:
 | :--- | :--- | :--- | :--- | :--- |
 | `business_analyst` | `BusinessAnalystAgent` | `file_reader` | `requirements_spec` | Read-only analysis |
 | `product_manager` | `ProductManagerAgent` | `file_reader` | `backlog` | Read-only planning |
-| `architect` | `ArchitectAgent` | `file_reader` | `technical_plan` | Read-only architecture |
+| `architect` | `ArchitectAgent` | `file_reader`, `codebase_inspector` | `technical_plan` | Read-only architecture |
 | `git_agent` | `GitAgent` | `git_command` | `git_state` | Branch `orcest/...` |
+| `package_manager_agent` | `PackageManagerAgent` | `composer_runner`, `directory_scaffolder`, `file_reader`, `patch_writer`, `codebase_inspector`, `artisan_runner` | `artifacts`, `metadata.package_manager` | Target project bootstrap, packages & structure |
 | `database_agent` | `DatabaseAgent` | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` | `database/`, `app/Models/` |
 | `backend_agent` | `BackendAgent` | `file_reader`, `patch_writer`, `artisan_runner` | `artifacts` | `app/`, `routes/`, `config/` |
 | `qa_agent` | `QaAgent` | `file_reader`, `patch_writer`, `test_runner` | `test_results` | `tests/` |
@@ -228,7 +229,7 @@ LARA_ORCEST_MODEL_FEATURE_TEST_AGENT=gpt-4o
 
 ## 3. Hierarchical Agent Pods & Sub-Agents
 
-When hierarchical teams are enabled (`lara-orcest.teams.enabled = true`), Lead Agents delegate specialized sub-tasks to helper sub-agents organized into 5 functional Pods:
+When hierarchical teams are enabled (`lara-orcest.teams.enabled = true`), Lead Agents delegate specialized sub-tasks to helper sub-agents organized into 6 functional Pods:
 
 ### 1. Discovery & Planning Pod
 - **Lead Agents:** `business_analyst`, `product_manager`
@@ -246,7 +247,15 @@ When hierarchical teams are enabled (`lara-orcest.teams.enabled = true`), Lead A
   - `api_contract_agent` (`ApiContractAgent`): REST API contracts, routes, and JSON resource schemas.
 - **Assigned Skills:** `laravel-modular-ddd-architecture`, `relational-schema-indexing`, `rest-api-contract-design`.
 
-### 3. Database Pod
+### 3. Package Manager Pod
+- **Lead Agent:** `package_manager_agent` (`PackageManagerAgent`)
+- **Sub-Agents:**
+  - `laravel_installer_agent` (`LaravelInstallerAgent`, Wave 0): Discloses target Laravel version in terminal and bootstraps fresh Laravel skeletons idempotently inside `targetProjectPath`.
+  - `dependency_resolver_agent` (`DependencyResolverAgent`, Wave 1): Discloses exact package versions in terminal and installs required Composer packages from prompt specification and `technical_plan`.
+  - `structure_scaffolder_agent` (`StructureScaffolderAgent`, Wave 2): Scaffolds modular DDD or standard Laravel directories and starter files within `PathGuard` boundaries.
+- **Assigned Skills:** `laravel-project-bootstrapping`, `composer-dependency-management`, `laravel-directory-scaffolding`.
+
+### 4. Database Pod
 - **Lead Agent:** `database_agent`
 - **Sub-Agents:**
   - `migration_agent` (`MigrationAgent`, Wave 0): Anonymous migrations in `database/migrations/**`.
@@ -254,7 +263,7 @@ When hierarchical teams are enabled (`lara-orcest.teams.enabled = true`), Lead A
   - `seeder_agent` (`SeederAgent`, Wave 2): Idempotent database seeders in `database/seeders/**`.
 - **Assigned Skills:** `laravel-safe-migrations`, `eloquent-models-and-factories`, `idempotent-database-seeders`.
 
-### 4. Backend Pod
+### 5. Backend Pod
 - **Lead Agent:** `backend_agent`
 - **Sub-Agents:**
   - `request_validation_agent` (`RequestValidationAgent`, Wave 0): FormRequests and Policies.
@@ -262,7 +271,7 @@ When hierarchical teams are enabled (`lara-orcest.teams.enabled = true`), Lead A
   - `controller_resource_agent` (`ControllerResourceAgent`, Wave 2): Thin controllers and JsonResources.
 - **Assigned Skills:** `laravel-form-requests-authorization`, `service-action-workflows`, `controllers-resources-routes`.
 
-### 5. Quality, Docs & Release Pod
+### 6. Quality, Docs & Release Pod
 - **Lead Agents:** `qa_agent`, `reviewer_agent`
 - **Sub-Agents:**
   - `feature_test_agent` (`FeatureTestAgent`, Wave 0 under QA): Pest/PHPUnit feature and unit tests in `tests/**`.

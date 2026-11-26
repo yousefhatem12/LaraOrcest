@@ -39,6 +39,14 @@ class GitAgent extends AbstractAgent
         return 'git_state';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return [
+            'safe-git-release',
+            'scoped-file-editing',
+        ];
+    }
+
     protected function buildUserPrompt(RunState $state): string
     {
         return "PROMPT: {$state->prompt}\nRUN ID: {$state->runId}\nPlease propose the feature branch name and initial milestone commit structure.";

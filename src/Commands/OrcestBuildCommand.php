@@ -7,6 +7,7 @@ namespace Yousef\LaraOrcest\Commands;
 use Illuminate\Console\Command;
 use Yousef\LaraOrcest\Orchestrator;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\TerminalAnnouncer;
 
 class OrcestBuildCommand extends Command
 {
@@ -110,34 +111,42 @@ class OrcestBuildCommand extends Command
             );
         };
 
-        if ($resumeId !== '') {
-            $this->components->info("Resuming LaraOrcest run [{$resumeId}]" . ($dryRun ? " [DRY-RUN MODE]" : ""));
+        TerminalAnnouncer::setWriter(function (string $message): void {
+            $this->line($message);
+        });
 
-            try {
-                $state = $orchestrator->resume($resumeId, $options);
-            } catch (\Throwable $e) {
-                $this->components->error("Resume error: " . $e->getMessage());
+        try {
+            if ($resumeId !== '') {
+                $this->components->info("Resuming LaraOrcest run [{$resumeId}]" . ($dryRun ? " [DRY-RUN MODE]" : ""));
 
-                return self::FAILURE;
+                try {
+                    $state = $orchestrator->resume($resumeId, $options);
+                } catch (\Throwable $e) {
+                    $this->components->error("Resume error: " . $e->getMessage());
+
+                    return self::FAILURE;
+                }
+            } else {
+                $prompt = (string) ($this->argument('prompt') ?: $this->option('prompt'));
+                if (trim($prompt) === '') {
+                    $this->components->error('Please provide a prompt argument or use --prompt="Your requirement".');
+
+                    return self::FAILURE;
+                }
+
+                $this->components->info("Starting LaraOrcest execution" . ($dryRun ? " [DRY-RUN MODE]" : ""));
+                $this->line("Prompt: <comment>{$prompt}</comment>");
+
+                try {
+                    $state = $orchestrator->run($prompt, $options);
+                } catch (\Throwable $e) {
+                    $this->components->error("Execution error: " . $e->getMessage());
+
+                    return self::FAILURE;
+                }
             }
-        } else {
-            $prompt = (string) ($this->argument('prompt') ?: $this->option('prompt'));
-            if (trim($prompt) === '') {
-                $this->components->error('Please provide a prompt argument or use --prompt="Your requirement".');
-
-                return self::FAILURE;
-            }
-
-            $this->components->info("Starting LaraOrcest execution" . ($dryRun ? " [DRY-RUN MODE]" : ""));
-            $this->line("Prompt: <comment>{$prompt}</comment>");
-
-            try {
-                $state = $orchestrator->run($prompt, $options);
-            } catch (\Throwable $e) {
-                $this->components->error("Execution error: " . $e->getMessage());
-
-                return self::FAILURE;
-            }
+        } finally {
+            TerminalAnnouncer::setWriter(null);
         }
 
         $this->newLine();
@@ -175,6 +184,21 @@ class OrcestBuildCommand extends Command
             $this->components->warn("⚠ LaraOrcest terminated with status: {$state->status} [Run ID: {$state->runId}]");
             if ($state->getFailureReason()) {
                 $this->line("<fg=red>Reason:</> {$state->getFailureReason()}");
+            }
+        }
+
+        // Display Package Manager Disclosure & Summary
+        $pmData = $state->getPackageManager();
+        if (! empty($pmData)) {
+            $this->components->twoColumnDetail(
+                '<options=bold>Target Laravel Version</>',
+                (string) ($pmData['target_laravel_version'] ?? 'default')
+            );
+            if (! empty($pmData['target_packages'])) {
+                $this->components->twoColumnDetail(
+                    '<options=bold>Target Packages</>',
+                    implode(', ', (array) $pmData['target_packages'])
+                );
             }
         }
 

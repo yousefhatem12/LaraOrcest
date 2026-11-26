@@ -51,6 +51,11 @@ class SwaggerSubAgent extends AbstractSubAgent
         return [];
     }
 
+    public function skills(): array
+    {
+        return ['openapi-swagger-spec'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
         $planJson = json_encode($context['technical_plan'] ?? $state->technicalPlan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

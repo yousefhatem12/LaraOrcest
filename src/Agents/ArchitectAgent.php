@@ -40,6 +40,15 @@ class ArchitectAgent extends AbstractAgent
         return 'technical_plan';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return [
+            'laravel-modular-ddd-architecture',
+            'relational-schema-indexing',
+            'rest-api-contract-design',
+        ];
+    }
+
     public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
     {
         $teamsEnabled = (bool) Config::get('lara-orcest.teams.enabled', true);

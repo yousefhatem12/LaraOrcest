@@ -134,8 +134,10 @@ class SkillRegistry
         $this->ensureLoaded();
 
         $matching = [];
+        $configured = (array) Config::get("lara-orcest.skills.agent_skills.{$agentKey}", []);
+
         foreach ($this->skills as $name => $skill) {
-            if ($skill->appliesToAgent($agentKey, $parentAgentKey)) {
+            if ($skill->appliesToAgent($agentKey, $parentAgentKey) || in_array($name, $configured, true)) {
                 $matching[$name] = $skill;
             }
         }

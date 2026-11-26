@@ -40,6 +40,15 @@ class FixerAgent extends AbstractAgent
         return 'artifacts';
     }
 
+    protected function getDefaultSkills(): array
+    {
+        return [
+            'root-cause-test-fixing',
+            'laravel-strict-standards',
+            'scoped-file-editing',
+        ];
+    }
+
     protected function buildUserPrompt(RunState $state): string
     {
         $testResults = json_encode($state->testResults, JSON_PRETTY_PRINT);

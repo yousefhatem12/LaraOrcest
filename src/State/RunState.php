@@ -211,22 +211,26 @@ class RunState
                     'cost' => 0.0,
                 ],
             ],
-            metadata: [
-                'created_at' => date('c'),
-                'schema_version' => self::SCHEMA_VERSION,
-                'memory_enabled' => $memoryEnabled,
-                'web_scraping' => $webScrapingMeta,
-                'swagger' => $swaggerMeta,
-                'package_manager' => $pmMeta,
-                'human_in_the_loop' => [
-                    'enabled' => $hitlEnabled,
-                    'skip_review' => $skipReview,
-                    'gates' => $gates,
-                    'paused_gate' => null,
-                    'pause_context' => null,
-                    'decisions' => [],
+            metadata: array_replace_recursive(
+                [
+                    'created_at' => date('c'),
+                    'schema_version' => self::SCHEMA_VERSION,
+                    'memory_enabled' => $memoryEnabled,
+                    'web_scraping' => $webScrapingMeta,
+                    'swagger' => $swaggerMeta,
+                    'package_manager' => $pmMeta,
+                    'human_in_the_loop' => [
+                        'enabled' => $hitlEnabled,
+                        'skip_review' => $skipReview,
+                        'gates' => $gates,
+                        'paused_gate' => null,
+                        'pause_context' => null,
+                        'decisions' => [],
+                    ],
                 ],
-            ],
+                isset($options['active_skills']) ? ['active_skills' => (array) $options['active_skills']] : [],
+                (array) ($options['metadata'] ?? [])
+            ),
             targetProjectPath: $targetProjectPath,
             workspaceMode: $workspaceMode
         );

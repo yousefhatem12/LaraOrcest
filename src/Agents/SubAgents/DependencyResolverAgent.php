@@ -8,6 +8,8 @@ use RuntimeException;
 use Yousef\LaraOrcest\Agents\Teams\AbstractSubAgent;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\PackageSpecResolver;
 use Yousef\LaraOrcest\Tools\ComposerRunnerTool;
 
 class DependencyResolverAgent extends AbstractSubAgent
@@ -58,14 +60,30 @@ class DependencyResolverAgent extends AbstractSubAgent
         return ['laravel_installer_agent'];
     }
 
+    public function skills(): array
+    {
+        return ['composer-dependency-management'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
+        $promptSpec = (string) ($context['prompt'] ?? $state->prompt);
         $planJson = json_encode($context['technical_plan'] ?? $state->technicalPlan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         $specJson = json_encode($context['requirements_spec'] ?? $state->requirementsSpec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $targetPath = (string) ($context['target_project_path'] ?? $state->targetProjectPath ?? Config::basePath());
+        $targetVersion = (string) ($context['target_laravel_version'] ?? PackageSpecResolver::resolveTargetLaravelVersion($state));
+        $defaultPkgs = (array) Config::get('lara-orcest.package_manager.default_packages', []);
+        $defaultPkgsSection = ! empty($defaultPkgs)
+            ? "\nCONFIGURED DEFAULT PACKAGES:\n" . json_encode($defaultPkgs, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n"
+            : '';
 
-        return "TECHNICAL PLAN:\n{$planJson}\n\n" .
-            "REQUIREMENTS SPECIFICATION:\n{$specJson}\n\n" .
-            "Identify all necessary Composer packages to install based on the technical plan.\n" .
+        return "USER PROMPT / TASK SPECIFICATION:\n{$promptSpec}\n\n" .
+            "TARGET LARAVEL VERSION: laravel/laravel:{$targetVersion}\n" .
+            "TARGET PROJECT PATH: {$targetPath}\n\n" .
+            "TECHNICAL PLAN:\n{$planJson}\n\n" .
+            "REQUIREMENTS SPECIFICATION:\n{$specJson}\n" .
+            $defaultPkgsSection . "\n" .
+            "Identify all necessary Composer packages to install based on the prompt specification and technical plan.\n" .
             "1. Output valid package names in vendor/package format (e.g. spatie/laravel-permission).\n" .
             "2. Specify version constraints when appropriate (e.g. ^6.0).\n" .
             "3. Mark dev tooling with dev: true (e.g. testing or static analysis packages).\n" .
@@ -117,9 +135,11 @@ class DependencyResolverAgent extends AbstractSubAgent
         /** @var ComposerRunnerTool|ToolContract $composerRunner */
         $composerRunner = $this->getTool('composer_runner', $tools);
 
-        $packages = (array) ($output['packages'] ?? []);
+        $packages = PackageSpecResolver::mergePlanDependencies($state, (array) ($output['packages'] ?? []));
         $installedPackages = [];
         $artifacts = [];
+
+        PackageSpecResolver::announcePackages('dependency_resolver_agent', $packages);
 
         foreach ($packages as $pkg) {
             $name = trim((string) ($pkg['name'] ?? ''));
@@ -169,7 +189,11 @@ class DependencyResolverAgent extends AbstractSubAgent
 
         return [
             'summary' => $summary,
-            'output' => array_merge($output, ['installed_packages' => $installedPackages]),
+            'output' => array_merge($output, [
+                'installed_packages' => $installedPackages,
+                'target_packages' => PackageSpecResolver::formatPackageSpecs($installedPackages),
+                'prompt_specification' => $state->prompt,
+            ]),
             'artifacts' => $artifacts,
         ];
     }

@@ -13,6 +13,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use Yousef\LaraOrcest\Orchestrator;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\TerminalAnnouncer;
 use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class BuildCommand extends Command
@@ -146,30 +147,38 @@ class BuildCommand extends Command
         // 3. Instantiate Orchestrator bound to target workspace
         $orchestrator = new Orchestrator(workspaceContext: $context);
 
-        if ($resumeId !== '') {
-            $io->title("Resuming LaraOrcest run [{$resumeId}]" . ($dryRun ? ' [DRY-RUN MODE]' : ''));
-            $io->text("Target Workspace: <info>{$context->getTargetProjectPath()}</info>");
+        TerminalAnnouncer::setWriter(static function (string $message) use ($output): void {
+            $output->writeln($message);
+        });
 
-            try {
-                $state = $orchestrator->resume($resumeId, $options);
-            } catch (\Throwable $e) {
-                $io->error('Resume error: ' . $e->getMessage());
+        try {
+            if ($resumeId !== '') {
+                $io->title("Resuming LaraOrcest run [{$resumeId}]" . ($dryRun ? ' [DRY-RUN MODE]' : ''));
+                $io->text("Target Workspace: <info>{$context->getTargetProjectPath()}</info>");
 
-                return Command::FAILURE;
+                try {
+                    $state = $orchestrator->resume($resumeId, $options);
+                } catch (\Throwable $e) {
+                    $io->error('Resume error: ' . $e->getMessage());
+
+                    return Command::FAILURE;
+                }
+            } else {
+                $io->title('Starting LaraOrcest Standalone Orchestration' . ($dryRun ? ' [DRY-RUN MODE]' : ''));
+                $io->text("Prompt: <comment>{$prompt}</comment>");
+                $io->text("Target Workspace: <info>{$context->getTargetProjectPath()}</info>");
+                $io->newLine();
+
+                try {
+                    $state = $orchestrator->run($prompt, $options);
+                } catch (\Throwable $e) {
+                    $io->error('Execution error: ' . $e->getMessage());
+
+                    return Command::FAILURE;
+                }
             }
-        } else {
-            $io->title('Starting LaraOrcest Standalone Orchestration' . ($dryRun ? ' [DRY-RUN MODE]' : ''));
-            $io->text("Prompt: <comment>{$prompt}</comment>");
-            $io->text("Target Workspace: <info>{$context->getTargetProjectPath()}</info>");
-            $io->newLine();
-
-            try {
-                $state = $orchestrator->run($prompt, $options);
-            } catch (\Throwable $e) {
-                $io->error('Execution error: ' . $e->getMessage());
-
-                return Command::FAILURE;
-            }
+        } finally {
+            TerminalAnnouncer::setWriter(null);
         }
 
         $io->newLine();
@@ -216,6 +225,23 @@ class BuildCommand extends Command
             "Target Project Path: {$state->getTargetProjectPath()}",
             "Workspace Mode: {$state->getWorkspaceMode()}",
         ]);
+
+        // Display Package Manager Disclosure & Summary
+        $pmData = $state->getPackageManager();
+        if (! empty($pmData)) {
+            $io->section('Package Manager & Dependencies');
+            $pmLines = [
+                'Target Laravel Version: ' . ($pmData['target_laravel_version'] ?? 'default'),
+                'Prompt Specification: ' . ($pmData['prompt_specification'] ?? $state->prompt),
+            ];
+            if (! empty($pmData['target_packages'])) {
+                $pmLines[] = 'Target Packages: ' . implode(', ', (array) $pmData['target_packages']);
+            }
+            if (! empty($pmData['scaffolded_directories'])) {
+                $pmLines[] = 'Scaffolded Directories: ' . implode(', ', (array) $pmData['scaffolded_directories']);
+            }
+            $io->listing($pmLines);
+        }
 
         // Display Tasks
         if (! empty($state->backlog)) {

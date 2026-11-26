@@ -145,6 +145,9 @@ class StandaloneCliTest extends TestCase
         $this->assertStringContainsString('DRY-RUN', $display);
         $this->assertStringContainsString('Scaffold an Invoice model and migration', $display);
         $this->assertStringContainsString(realpath($this->tempWorkspace), $display);
+        $this->assertStringContainsString('Target Laravel Version', $display);
+        $this->assertStringContainsString('spatie/laravel-permission:^6.0', $display);
+        $this->assertDirectoryDoesNotExist($this->tempWorkspace . '/app/Domains/Billing');
     }
 
     public function test_bin_lara_orcest_executable_runs_via_process(): void

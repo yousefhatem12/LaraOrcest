@@ -50,6 +50,11 @@ class SchemaPlannerAgent extends AbstractSubAgent
         return [];
     }
 
+    public function skills(): array
+    {
+        return ['relational-schema-indexing'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
         $specJson = json_encode($context['requirements_spec'] ?? $state->requirementsSpec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);

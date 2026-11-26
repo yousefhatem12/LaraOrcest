@@ -7,6 +7,9 @@ namespace Yousef\LaraOrcest\Agents\SubAgents;
 use Yousef\LaraOrcest\Agents\Teams\AbstractSubAgent;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\PackageSpecResolver;
+use Yousef\LaraOrcest\Support\TerminalAnnouncer;
 use Yousef\LaraOrcest\Tools\ComposerRunnerTool;
 
 class LaravelInstallerAgent extends AbstractSubAgent
@@ -66,15 +69,24 @@ class LaravelInstallerAgent extends AbstractSubAgent
         return [];
     }
 
+    public function skills(): array
+    {
+        return ['laravel-project-bootstrapping'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
+        $promptSpec = (string) ($context['prompt'] ?? $state->prompt);
         $planJson = json_encode($context['technical_plan'] ?? $state->technicalPlan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
         $specJson = json_encode($context['requirements_spec'] ?? $state->requirementsSpec, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        $targetPath = $state->targetProjectPath ?? 'current directory';
+        $targetPath = (string) ($context['target_project_path'] ?? $state->targetProjectPath ?? Config::basePath());
+        $targetVersion = (string) ($context['target_laravel_version'] ?? PackageSpecResolver::resolveTargetLaravelVersion($state));
 
-        return "TECHNICAL PLAN:\n{$planJson}\n\n" .
-            "REQUIREMENTS SPECIFICATION:\n{$specJson}\n\n" .
+        return "USER PROMPT / TASK SPECIFICATION:\n{$promptSpec}\n\n" .
+            "TARGET LARAVEL VERSION: laravel/laravel:{$targetVersion}\n" .
             "TARGET PROJECT PATH: {$targetPath}\n\n" .
+            "TECHNICAL PLAN:\n{$planJson}\n\n" .
+            "REQUIREMENTS SPECIFICATION:\n{$specJson}\n\n" .
             "Evaluate and bootstrap the target Laravel project:\n" .
             "1. Inspect if Laravel is already installed (composer.json or artisan present).\n" .
             "2. If not initialized, specify the command to bootstrap (composer create-project laravel/laravel .).\n" .
@@ -118,10 +130,10 @@ class LaravelInstallerAgent extends AbstractSubAgent
         /** @var ComposerRunnerTool|ToolContract $composerRunner */
         $composerRunner = $this->getTool('composer_runner', $tools);
 
-        $targetPath = $state->targetProjectPath;
+        $targetPath = $state->targetProjectPath ?? Config::basePath();
         $isExisting = false;
 
-        if ($targetPath !== null && is_dir($targetPath)) {
+        if ($targetPath !== '' && is_dir($targetPath)) {
             $hasComposer = file_exists($targetPath . DIRECTORY_SEPARATOR . 'composer.json');
             $hasArtisan = file_exists($targetPath . DIRECTORY_SEPARATOR . 'artisan');
             if ($hasComposer || $hasArtisan) {
@@ -129,35 +141,45 @@ class LaravelInstallerAgent extends AbstractSubAgent
             }
         }
 
+        $targetVersion = PackageSpecResolver::resolveTargetLaravelVersion($state);
+        $installedConstraint = $isExisting ? PackageSpecResolver::detectInstalledLaravelVersion($targetPath) : null;
+        $createProjectTarget = PackageSpecResolver::resolveCreateProjectTarget($targetVersion);
         $artifacts = [];
+        $composerResult = null;
 
         if ($isExisting) {
             $status = 'already_initialized';
             $action = 'verify_existing';
-            $summary = 'Target workspace is already initialized with an existing Laravel application. Skipped create-project.';
+            $detectedNote = $installedConstraint !== null ? " (detected laravel/framework:{$installedConstraint})" : '';
+            $summary = "Target workspace is already initialized with an existing Laravel application. Verified skeleton [laravel/laravel:{$targetVersion}]{$detectedNote}. Skipped create-project.";
+
+            TerminalAnnouncer::announce("  [laravel_installer_agent] Existing Laravel application detected in [{$targetPath}]. Verified skeleton [laravel/laravel:{$targetVersion}]{$detectedNote}.");
 
             $artifacts[] = [
                 'path' => 'composer.json',
                 'action' => 'verified',
-                'summary' => 'Verified existing Laravel project installation in target workspace',
+                'summary' => "Verified existing Laravel project installation [laravel/laravel:{$targetVersion}]{$detectedNote} in target workspace",
             ];
         } else {
             $status = 'initialized';
             $action = 'bootstrap_project';
-            $summary = (string) ($output['summary'] ?? 'Bootstrapped fresh Laravel application structure.');
+            $summary = (string) ($output['summary'] ?? "Bootstrapped fresh Laravel application structure [laravel/laravel:{$targetVersion}].");
+
+            TerminalAnnouncer::announce("  [laravel_installer_agent] Target Version: Preparing to install Laravel Skeleton [laravel/laravel:{$targetVersion}] into [{$targetPath}]");
+            TerminalAnnouncer::announce("  [laravel_installer_agent] Executing: composer create-project {$createProjectTarget} . --prefer-dist --no-interaction");
 
             // Execute composer create-project
             $composerResult = $composerRunner->execute([
                 'command' => 'create-project',
-                'arguments' => ['laravel/laravel', '.', '--prefer-dist', '--no-interaction'],
+                'arguments' => [$createProjectTarget, '.', '--prefer-dist', '--no-interaction'],
             ]);
 
             $artifacts[] = [
                 'path' => 'composer.json',
                 'action' => $state->isDryRun() ? 'preview' : 'created',
                 'summary' => $state->isDryRun()
-                    ? '[DRY-RUN] Previewed composer create-project laravel/laravel'
-                    : 'Created fresh Laravel application skeleton via composer create-project',
+                    ? "[DRY-RUN] Previewed composer create-project {$createProjectTarget}"
+                    : "Created fresh Laravel application skeleton [{$createProjectTarget}] via composer create-project",
             ];
         }
 
@@ -165,7 +187,12 @@ class LaravelInstallerAgent extends AbstractSubAgent
             'status' => $status,
             'action' => $action,
             'summary' => $summary,
+            'target_laravel_version' => $targetVersion,
+            'detected_laravel_version' => $installedConstraint,
+            'prompt_specification' => $state->prompt,
+            'target_project_path' => $targetPath,
             'is_existing' => $isExisting,
+            'composer_result' => $composerResult,
         ]);
 
         return [

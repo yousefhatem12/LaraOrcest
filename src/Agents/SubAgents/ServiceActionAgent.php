@@ -57,6 +57,11 @@ class ServiceActionAgent extends AbstractSubAgent
         return ['request_validation_agent'];
     }
 
+    public function skills(): array
+    {
+        return ['service-action-workflows'];
+    }
+
     protected function buildUserPrompt(RunState $state, array $context = []): string
     {
         $planJson = json_encode($context['technical_plan'] ?? $state->technicalPlan, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
