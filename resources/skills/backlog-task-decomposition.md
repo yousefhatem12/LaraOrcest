@@ -7,6 +7,20 @@ agents:
   - architect
 allowed_tools:
   - file_reader
+explore_paths:
+  - composer.json
+  - routes/*.php
+  - app/Models/*.php
+  - app/Domains/**/Models/*.php
+modify_paths: []
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - public/**
+  - resources/**
 tags:
   - backlog
   - planning
@@ -32,3 +46,6 @@ When transforming a requirements specification into an engineering backlog:
 
 4. **Verifiable Acceptance Criteria:**
    - Each task must include clear, testable acceptance criteria with expected HTTP status codes, validation responses, and database assertions.
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths` (none — read-only planning), and NEVER scan or load files outside these globs or in `ignore_paths`.

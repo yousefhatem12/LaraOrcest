@@ -8,6 +8,21 @@ agents:
 allowed_tools:
   - file_reader
   - codebase_inspector
+explore_paths:
+  - database/migrations/**
+  - database/factories/**
+  - app/Models/**
+  - app/Domains/**/Models/**
+modify_paths: []
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - app/Http/**
+  - routes/**
+  - resources/**
 tags:
   - database
   - schema
@@ -35,3 +50,6 @@ When planning database schemas, tables, relationships, and migration sequencing:
    - Migrations must be ordered chronologically so parent tables are created before child tables reference them via foreign keys.
    - Table-altering migrations must be segregated from table-creation migrations.
    - Every migration must be reversible with a clean, symmetry-preserving `down()` method.
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths` (none — read-only schema planning), and NEVER scan or load files outside these globs or in `ignore_paths`.

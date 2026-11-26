@@ -231,6 +231,248 @@ class SkillRegistry
     }
 
     /**
+     * Aggregate allowed explore paths (explore_paths + modify_paths) for an agent's active skills.
+     *
+     * @param  array<int, string>  $requestedNames
+     * @return array<int, string>
+     */
+    public function explorePaths(string $agentKey, array $requestedNames = [], ?string $parentAgentKey = null): array
+    {
+        return $this->resolveExplorePaths($agentKey, $requestedNames, $parentAgentKey);
+    }
+
+    /**
+     * Aggregate allowed explore paths (explore_paths + modify_paths) for an agent's active skills.
+     *
+     * @param  array<int, string>  $requestedNames
+     * @return array<int, string>
+     */
+    public function resolveExplorePaths(string $agentKey, array $requestedNames = [], ?string $parentAgentKey = null): array
+    {
+        $skills = $this->resolveActiveSkills($agentKey, $requestedNames, $parentAgentKey);
+
+        return self::aggregateExplorePaths($skills);
+    }
+
+    /**
+     * Aggregate allowed modify paths for an agent's active skills.
+     *
+     * @param  array<int, string>  $requestedNames
+     * @return array<int, string>
+     */
+    public function modifyPaths(string $agentKey, array $requestedNames = [], ?string $parentAgentKey = null): array
+    {
+        return $this->resolveModifyPaths($agentKey, $requestedNames, $parentAgentKey);
+    }
+
+    /**
+     * Aggregate allowed modify paths for an agent's active skills.
+     *
+     * @param  array<int, string>  $requestedNames
+     * @return array<int, string>
+     */
+    public function resolveModifyPaths(string $agentKey, array $requestedNames = [], ?string $parentAgentKey = null): array
+    {
+        $skills = $this->resolveActiveSkills($agentKey, $requestedNames, $parentAgentKey);
+
+        return self::aggregateModifyPaths($skills);
+    }
+
+    /**
+     * Aggregate ignored paths across an agent's active skills.
+     *
+     * @param  array<int, string>  $requestedNames
+     * @return array<int, string>
+     */
+    public function ignorePaths(string $agentKey, array $requestedNames = [], ?string $parentAgentKey = null): array
+    {
+        return $this->resolveIgnorePaths($agentKey, $requestedNames, $parentAgentKey);
+    }
+
+    /**
+     * Aggregate ignored paths across an agent's active skills.
+     *
+     * @param  array<int, string>  $requestedNames
+     * @return array<int, string>
+     */
+    public function resolveIgnorePaths(string $agentKey, array $requestedNames = [], ?string $parentAgentKey = null): array
+    {
+        $skills = $this->resolveActiveSkills($agentKey, $requestedNames, $parentAgentKey);
+
+        return self::aggregateIgnorePaths($skills);
+    }
+
+    /**
+     * Build a compact Allowed File Map (Explore Only vs Can Modify vs Ignore) for prompt injection.
+     *
+     * @param  array<int, string>  $requestedNames
+     * @param  array<int, string>  $agentScopePaths
+     */
+    public function buildAllowedFileMap(
+        string $agentKey,
+        array $requestedNames = [],
+        ?string $parentAgentKey = null,
+        array $agentScopePaths = []
+    ): string {
+        if (! $this->enabled) {
+            return '';
+        }
+
+        $skills = $this->resolveActiveSkills($agentKey, $requestedNames, $parentAgentKey);
+
+        return self::buildAllowedFileMapForSkills($skills, $agentScopePaths);
+    }
+
+    /**
+     * Aggregate explore_paths + modify_paths across a list of Skill instances.
+     *
+     * @param  array<int|string, Skill>  $skills
+     * @return array<int, string>
+     */
+    public static function aggregateExplorePaths(array $skills): array
+    {
+        $paths = [];
+        foreach ($skills as $skill) {
+            if ($skill instanceof Skill) {
+                $paths = array_merge($paths, $skill->explorePaths(), $skill->modifyPaths());
+            }
+        }
+
+        return array_values(array_unique(array_filter($paths, static fn ($p) => is_string($p) && trim($p) !== '')));
+    }
+
+    /**
+     * Aggregate modify_paths across a list of Skill instances.
+     *
+     * @param  array<int|string, Skill>  $skills
+     * @return array<int, string>
+     */
+    public static function aggregateModifyPaths(array $skills): array
+    {
+        $paths = [];
+        foreach ($skills as $skill) {
+            if ($skill instanceof Skill) {
+                $paths = array_merge($paths, $skill->modifyPaths());
+            }
+        }
+
+        return array_values(array_unique(array_filter($paths, static fn ($p) => is_string($p) && trim($p) !== '')));
+    }
+
+    /**
+     * Aggregate ignore_paths across a list of Skill instances.
+     * Excludes a skill's domain ignore_paths if a sibling active skill explicitly permits that path via explore_paths or modify_paths.
+     *
+     * @param  array<int|string, Skill>  $skills
+     * @return array<int, string>
+     */
+    public static function aggregateIgnorePaths(array $skills): array
+    {
+        $skillList = array_values(array_filter($skills, static fn ($sk) => $sk instanceof Skill));
+        $paths = [];
+
+        foreach ($skillList as $idx => $skill) {
+            foreach ($skill->ignorePaths() as $ignorePattern) {
+                if (! is_string($ignorePattern) || trim($ignorePattern) === '') {
+                    continue;
+                }
+
+                $overriddenBySibling = false;
+                foreach ($skillList as $otherIdx => $otherSkill) {
+                    if ($otherIdx === $idx) {
+                        continue;
+                    }
+                    $otherAllowed = array_merge($otherSkill->explorePaths(), $otherSkill->modifyPaths());
+                    foreach ($otherAllowed as $allowedGlob) {
+                        if (self::globCovers($ignorePattern, $allowedGlob)) {
+                            $overriddenBySibling = true;
+                            break 2;
+                        }
+                    }
+                }
+
+                if (! $overriddenBySibling) {
+                    $paths[] = $ignorePattern;
+                }
+            }
+        }
+
+        return array_values(array_unique($paths));
+    }
+
+    /**
+     * Checks whether $broaderGlob covers the namespace/path of $targetGlob.
+     */
+    protected static function globCovers(string $broaderGlob, string $targetGlob): bool
+    {
+        $b = ltrim(str_replace('\\', '/', trim($broaderGlob)), './');
+        $t = ltrim(str_replace('\\', '/', trim($targetGlob)), './');
+        if ($b === $t) {
+            return true;
+        }
+
+        $guard = new \Yousef\LaraOrcest\Tools\Support\PathGuard();
+        if ($guard->globMatches($t, $b)) {
+            return true;
+        }
+
+        // Convert 'app/**' or 'app/Domains/*/Models/**' into a concrete probe path to check glob coverage
+        $probe = preg_replace('/\/\*\*$/', '/__probe__', $t) ?? $t;
+        $probe = str_replace(['**', '*'], ['__a__/__b__', '__x__'], $probe);
+
+        return $guard->globMatches($probe, $b);
+    }
+
+    /**
+     * Build a compact Allowed File Map section directly from resolved Skill instances.
+     *
+     * @param  array<int|string, Skill>  $skills
+     * @param  array<int, string>  $agentScopePaths
+     */
+    public static function buildAllowedFileMapForSkills(array $skills, array $agentScopePaths = []): string
+    {
+        if (empty($skills) && empty($agentScopePaths)) {
+            return '';
+        }
+
+        $explore = self::aggregateExplorePaths($skills);
+        $modify = self::aggregateModifyPaths($skills);
+        $ignore = self::aggregateIgnorePaths($skills);
+
+        $hasModifyDeclaration = false;
+        foreach ($skills as $skill) {
+            if ($skill instanceof Skill && $skill->hasDeclaredModifyPaths()) {
+                $hasModifyDeclaration = true;
+                break;
+            }
+        }
+
+        if (! empty($agentScopePaths)) {
+            if (! $hasModifyDeclaration) {
+                $modify = array_values(array_unique($agentScopePaths));
+            } elseif (! empty($modify)) {
+                // Keep concrete scope paths when agent scope is narrower or combine cleanly for display
+                $modify = count($agentScopePaths) <= count($modify) ? array_values(array_unique($agentScopePaths)) : $modify;
+            }
+        }
+
+        $exploreOnly = array_values(array_diff($explore, $modify));
+
+        if (empty($exploreOnly) && empty($modify) && empty($ignore)) {
+            return '';
+        }
+
+        $lines = ['ALLOWED FILE MAP (Token-Saving Boundaries — Inspect ONLY Explore/Modify paths; NEVER scan or load Ignore paths):'];
+        $lines[] = '- Explore Only (Read): ' . (! empty($exploreOnly) ? implode(', ', $exploreOnly) : '(none)');
+        $lines[] = '- Can Modify (Read & Write): ' . (! empty($modify) ? implode(', ', $modify) : '(none — read-only)');
+        if (! empty($ignore)) {
+            $lines[] = '- Ignore (Never Load): ' . implode(', ', $ignore);
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
      * Ensure package and custom skills are loaded once.
      */
     public function loadAll(bool $force = false): self

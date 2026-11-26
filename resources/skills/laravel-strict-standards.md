@@ -11,6 +11,20 @@ agents:
 allowed_tools:
   - file_reader
   - patch_writer
+explore_paths:
+  - app/**
+  - database/**
+  - routes/**
+  - tests/**
+  - config/**
+modify_paths: []
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - public/**
 tags:
   - php
   - laravel
@@ -37,3 +51,6 @@ When implementing or modifying code in this Laravel application, always adhere s
    - Avoid catching generic `\Exception` unless logging and re-throwing a domain-specific exception.
    - Never expose internal database error messages, stack traces, or environment secrets to HTTP clients.
    - Always verify authorization via Policies (`$this->authorize(...)` or `Gate::authorize(...)`).
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths` (standards guideline — read-only), and NEVER scan or load files outside these globs or in `ignore_paths`.

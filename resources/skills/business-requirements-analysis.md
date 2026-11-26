@@ -7,6 +7,21 @@ agents:
   - product_manager
 allowed_tools:
   - file_reader
+explore_paths:
+  - composer.json
+  - routes/*.php
+  - app/Models/*.php
+  - app/Domains/**/Models/*.php
+  - database/migrations/*.php
+modify_paths: []
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - public/**
+  - resources/views/**
 tags:
   - requirements
   - analysis
@@ -31,3 +46,6 @@ When analyzing user prompts and defining technical specifications for a Laravel 
 3. **Edge Cases & Ambiguity Detection:**
    - Hunt for missing requirements: what happens on network timeouts, concurrent double submissions, negative values, null/empty payloads, or partial transactions?
    - Surface ambiguities early: do not assume default behavior if business implications are significant; document explicit assumptions.
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths` (none — read-only analysis), and NEVER scan or load files outside these globs or in `ignore_paths`.

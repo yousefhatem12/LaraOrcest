@@ -8,6 +8,34 @@ allowed_tools:
   - file_reader
   - patch_writer
   - artisan_runner
+explore_paths:
+  - routes/**
+  - app/Http/Controllers/**
+  - app/Http/Requests/**
+  - app/Http/Resources/**
+  - app/Models/**
+  - docs/**
+  - storage/api-docs/**
+  - public/swagger.json
+  - swagger.json
+  - swagger.yaml
+modify_paths:
+  - docs/**
+  - storage/api-docs/**
+  - public/swagger.json
+  - public/swagger.yaml
+  - swagger.json
+  - swagger.yaml
+  - openapi.json
+  - openapi.yaml
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/logs/**
+  - bootstrap/cache/**
+  - .git/**
+  - database/seeders/**
+  - tests/**
 tags:
   - swagger
   - openapi
@@ -41,3 +69,6 @@ When generating or updating API documentation in `docs/**`, `storage/api-docs/**
 
 4. **Scope Safety:**
    - Restrict file output strictly to configured API documentation paths (`docs/swagger.json`, `docs/openapi.yaml`, `storage/api-docs/**`).
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

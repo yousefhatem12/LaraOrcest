@@ -10,6 +10,29 @@ allowed_tools:
   - patch_writer
   - artisan_runner
   - codebase_inspector
+explore_paths:
+  - composer.json
+  - composer.lock
+  - artisan
+  - .env.example
+  - bootstrap/**
+  - config/**
+modify_paths:
+  - composer.json
+  - .env.example
+  - artisan
+  - bootstrap/**
+  - config/**
+  - public/**
+  - storage/**
+  - database/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/logs/**
+  - bootstrap/cache/**
+  - .git/**
+  - .env
 tags:
   - laravel
   - bootstrap
@@ -42,3 +65,6 @@ When bootstrapping or verifying a Laravel project inside an isolated target work
 4. **Sandbox Boundary Enforcement:**
    - All filesystem operations and process executions must be strictly confined to `targetProjectPath` through `PathGuard`.
    - Never attempt to write or execute outside the defined workspace boundary.
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

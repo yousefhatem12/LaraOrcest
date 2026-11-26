@@ -15,12 +15,58 @@ class CodebaseInspectorTool implements ToolContract
     protected PathGuard $pathGuard;
     protected ?WorkspaceContext $workspaceContext = null;
 
+    /**
+     * @var array<int, string>
+     */
+    protected array $allowedExplorePaths = [];
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $ignorePaths = [];
+
     public function __construct(
         ?PathGuard $pathGuard = null,
         ?WorkspaceContext $workspaceContext = null
     ) {
         $this->workspaceContext = $workspaceContext;
         $this->pathGuard = $pathGuard ?: ($workspaceContext ? $workspaceContext->createPathGuard() : new PathGuard());
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     */
+    public function setAllowedExplorePaths(array $paths): self
+    {
+        $this->allowedExplorePaths = array_values(array_filter($paths, static fn ($p) => is_string($p) && trim($p) !== ''));
+
+        return $this;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function getAllowedExplorePaths(): array
+    {
+        return $this->allowedExplorePaths;
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     */
+    public function setIgnorePaths(array $paths): self
+    {
+        $this->ignorePaths = array_values(array_filter($paths, static fn ($p) => is_string($p) && trim($p) !== ''));
+
+        return $this;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function getIgnorePaths(): array
+    {
+        return $this->ignorePaths;
     }
 
     public function getPathGuard(): PathGuard
@@ -105,9 +151,18 @@ class CodebaseInspectorTool implements ToolContract
     public function listDirectory(string $path, string $pattern = ''): array
     {
         $resolved = $this->pathGuard->resolveSafePath($path !== '' ? $path : '.', mustExist: false);
+        $relTarget = $this->pathGuard->getRelativePath($resolved);
+        if (! $this->isDirectoryPermitted($relTarget)) {
+            return [
+                'path' => $relTarget,
+                'exists' => false,
+                'entries' => [],
+            ];
+        }
+
         if (! is_dir($resolved)) {
             return [
-                'path' => $this->pathGuard->getRelativePath($resolved),
+                'path' => $relTarget,
                 'exists' => false,
                 'entries' => [],
             ];
@@ -136,11 +191,15 @@ class CodebaseInspectorTool implements ToolContract
                 continue;
             }
 
+            $isDir = is_dir($full);
+            if ($isDir ? ! $this->isDirectoryPermitted($rel) : ! $this->isFilePermitted($rel)) {
+                continue;
+            }
+
             if ($pattern !== '' && ! fnmatch($pattern, $item)) {
                 continue;
             }
 
-            $isDir = is_dir($full);
             $entries[] = [
                 'name' => $item,
                 'path' => $rel,
@@ -172,7 +231,7 @@ class CodebaseInspectorTool implements ToolContract
             $resolved = $this->pathGuard->resolveSafePath($dir, mustExist: false);
         }
 
-        if (! is_dir($resolved)) {
+        if (! is_dir($resolved) || ! $this->isDirectoryPermitted($this->pathGuard->getRelativePath($resolved))) {
             return ['models' => []];
         }
 
@@ -180,13 +239,17 @@ class CodebaseInspectorTool implements ToolContract
         $models = [];
 
         foreach ($files as $file) {
+            $rel = $this->pathGuard->getRelativePath($file);
+            if (! $this->isFilePermitted($rel)) {
+                continue;
+            }
             $content = (string) file_get_contents($file);
             $className = pathinfo($file, PATHINFO_FILENAME);
 
             if (str_contains($content, 'extends Model') || str_contains($content, 'extends Authenticatable')) {
                 $models[] = [
                     'class' => $className,
-                    'file' => $this->pathGuard->getRelativePath($file),
+                    'file' => $rel,
                 ];
             }
         }
@@ -204,7 +267,7 @@ class CodebaseInspectorTool implements ToolContract
         $dir = $path !== '' ? $path : 'database/migrations';
         $resolved = $this->pathGuard->resolveSafePath($dir, mustExist: false);
 
-        if (! is_dir($resolved)) {
+        if (! is_dir($resolved) || ! $this->isDirectoryPermitted($this->pathGuard->getRelativePath($resolved))) {
             return ['migrations' => []];
         }
 
@@ -213,6 +276,10 @@ class CodebaseInspectorTool implements ToolContract
 
         $migrations = [];
         foreach ($files as $file) {
+            $rel = $this->pathGuard->getRelativePath($file);
+            if (! $this->isFilePermitted($rel)) {
+                continue;
+            }
             $base = basename($file);
             $table = null;
             $action = 'migration';
@@ -226,7 +293,7 @@ class CodebaseInspectorTool implements ToolContract
             }
 
             $migrations[] = [
-                'file' => $this->pathGuard->getRelativePath($file),
+                'file' => $rel,
                 'name' => pathinfo($file, PATHINFO_FILENAME),
                 'table' => $table,
                 'action' => $action,
@@ -248,7 +315,8 @@ class CodebaseInspectorTool implements ToolContract
 
         foreach ($candidates as $cand) {
             $safe = $this->pathGuard->resolveSafePath($cand, mustExist: false);
-            if (! is_file($safe)) {
+            $rel = $this->pathGuard->getRelativePath($safe);
+            if (! is_file($safe) || ! $this->isFilePermitted($rel)) {
                 continue;
             }
 
@@ -261,7 +329,7 @@ class CodebaseInspectorTool implements ToolContract
             }
 
             $results[] = [
-                'file' => $this->pathGuard->getRelativePath($safe),
+                'file' => $rel,
                 'endpoints' => $endpoints,
             ];
         }
@@ -279,17 +347,38 @@ class CodebaseInspectorTool implements ToolContract
         $dir = $path !== '' ? $path : 'app';
         $resolved = $this->pathGuard->resolveSafePath($dir, mustExist: false);
 
-        if (! is_dir($resolved)) {
+        if (! is_dir($resolved) || ! $this->isDirectoryPermitted($this->pathGuard->getRelativePath($resolved))) {
             return ['symbols' => []];
         }
 
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($resolved, \RecursiveDirectoryIterator::SKIP_DOTS)
+        $dirIterator = new \RecursiveDirectoryIterator($resolved, \RecursiveDirectoryIterator::SKIP_DOTS);
+        $filterIterator = new \RecursiveCallbackFilterIterator(
+            $dirIterator,
+            function (\SplFileInfo $current): bool {
+                $rel = $this->pathGuard->getRelativePath($current->getPathname());
+                if ($this->pathGuard->isDenied($rel) || $this->pathGuard->isDenied($current->getFilename())) {
+                    return false;
+                }
+                if (! empty($this->ignorePaths) && $this->pathGuard->matchesAnyGlob($rel, $this->ignorePaths)) {
+                    return false;
+                }
+                if ($current->isDir() && ! empty($this->allowedExplorePaths)) {
+                    return $this->pathGuard->isDirectoryWithinGlobs($rel, $this->allowedExplorePaths);
+                }
+
+                return true;
+            }
         );
+        $iterator = new \RecursiveIteratorIterator($filterIterator);
 
         $symbols = [];
         foreach ($iterator as $file) {
             if ($file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $rel = $this->pathGuard->getRelativePath($file->getRealPath());
+            if (! $this->isFilePermitted($rel)) {
                 continue;
             }
 
@@ -303,11 +392,37 @@ class CodebaseInspectorTool implements ToolContract
                 $symbols[] = [
                     'type' => strtolower($m[1]),
                     'name' => $symName,
-                    'file' => $this->pathGuard->getRelativePath($file->getRealPath()),
+                    'file' => $rel,
                 ];
             }
         }
 
         return ['symbols' => $symbols];
+    }
+
+    protected function isFilePermitted(string $relativePath): bool
+    {
+        if (! empty($this->ignorePaths) && $this->pathGuard->matchesAnyGlob($relativePath, $this->ignorePaths)) {
+            return false;
+        }
+
+        if (! empty($this->allowedExplorePaths)) {
+            return $this->pathGuard->matchesAnyGlob($relativePath, $this->allowedExplorePaths);
+        }
+
+        return true;
+    }
+
+    protected function isDirectoryPermitted(string $relativeDir): bool
+    {
+        if ($relativeDir !== '.' && ! empty($this->ignorePaths) && $this->pathGuard->matchesAnyGlob($relativeDir, $this->ignorePaths)) {
+            return false;
+        }
+
+        if (! empty($this->allowedExplorePaths)) {
+            return $this->pathGuard->isDirectoryWithinGlobs($relativeDir, $this->allowedExplorePaths);
+        }
+
+        return true;
     }
 }

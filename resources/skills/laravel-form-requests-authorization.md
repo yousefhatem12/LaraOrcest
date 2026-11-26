@@ -8,6 +8,25 @@ allowed_tools:
   - file_reader
   - patch_writer
   - artisan_runner
+explore_paths:
+  - app/Models/**
+  - app/Domains/**/Models/**
+  - app/Http/Requests/**
+  - app/Policies/**
+  - database/migrations/**
+modify_paths:
+  - app/Http/Requests/**
+  - app/Policies/**
+  - app/Domains/**/Requests/**
+  - app/Domains/**/Policies/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - database/seeders/**
+  - resources/views/**
 tags:
   - validation
   - form-requests
@@ -39,3 +58,6 @@ When implementing FormRequests in `app/Http/Requests/` (or `app/Domains/**/Reque
 4. **Policy Authorization Gates:**
    - Implement policies in `app/Policies/` with explicit method signatures matching standard CRUD operations (`viewAny`, `view`, `create`, `update`, `delete`, `restore`, `forceDelete`).
    - Return strict boolean values or `Illuminate\Auth\Access\Response` objects.
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

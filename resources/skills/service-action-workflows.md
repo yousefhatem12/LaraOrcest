@@ -8,6 +8,27 @@ allowed_tools:
   - file_reader
   - patch_writer
   - artisan_runner
+explore_paths:
+  - app/Models/**
+  - app/Domains/**
+  - app/Actions/**
+  - app/Services/**
+  - app/Events/**
+  - app/Http/Requests/**
+modify_paths:
+  - app/Services/**
+  - app/Actions/**
+  - app/Events/**
+  - app/Domains/**/Actions/**
+  - app/Domains/**/Services/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - database/**
+  - resources/**
 tags:
   - actions
   - services
@@ -38,3 +59,6 @@ When implementing business logic, actions, and service workflows in `app/Actions
 
 4. **Decoupled Architecture:**
    - Prevent controller bloat. Controllers should only be responsible for parsing HTTP requests, invoking Actions/Services, and returning HTTP responses.
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

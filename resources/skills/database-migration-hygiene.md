@@ -10,6 +10,20 @@ allowed_tools:
   - file_reader
   - patch_writer
   - artisan_runner
+explore_paths:
+  - database/migrations/**
+  - app/Models/**
+  - app/Domains/**/Models/**
+modify_paths:
+  - database/migrations/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - resources/**
+  - public/**
 tags:
   - database
   - migrations
@@ -32,3 +46,6 @@ When authoring database migrations, seeders, and Eloquent models:
    - Define explicit `$fillable` arrays on every model—never use empty `$guarded`.
    - Add return type hints to all relationship methods (e.g. `public function user(): BelongsTo`).
    - Use `$casts` or the `casts(): array` method for date/time columns, booleans, and JSON/array attributes.
+
+3. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

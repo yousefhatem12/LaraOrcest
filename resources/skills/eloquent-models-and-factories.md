@@ -8,6 +8,24 @@ allowed_tools:
   - file_reader
   - patch_writer
   - artisan_runner
+explore_paths:
+  - database/migrations/**
+  - app/Models/**
+  - app/Domains/**/Models/**
+  - database/factories/**
+modify_paths:
+  - app/Models/**
+  - app/Domains/**/Models/**
+  - database/factories/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - app/Http/**
+  - routes/**
+  - resources/**
 tags:
   - eloquent
   - models
@@ -42,3 +60,6 @@ When implementing Eloquent models in `app/Models/` (or `app/Domains/**/Models/`)
    - Pair every model with a factory using `use HasFactory;`.
    - In `definition()`, provide realistic fake data using `fake()` helpers (e.g. `fake()->company()`, `fake()->unique()->safeEmail()`).
    - Use state transformations (e.g. `unverified()`, `published()`) for common domain variations.
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

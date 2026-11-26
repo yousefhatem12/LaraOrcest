@@ -14,11 +14,20 @@ class ScopedToolProxy implements ToolContract
 
     /**
      * @param  array<int, string>  $scopePaths
+     * @param  array<int, string>  $explorePaths
+     * @param  array<int, string>  $modifyPaths
+     * @param  array<int, string>  $ignorePaths
      */
     public function __construct(
         protected ToolContract $tool,
         protected array $scopePaths = [],
-        ?PathGuard $pathGuard = null
+        ?PathGuard $pathGuard = null,
+        mixed $agent = null,
+        protected array $explorePaths = [],
+        protected array $modifyPaths = [],
+        protected array $ignorePaths = [],
+        protected bool $hasExplicitExplorePaths = false,
+        protected bool $hasExplicitModifyPaths = false
     ) {
         if ($pathGuard === null && method_exists($tool, 'getPathGuard') && $tool->getPathGuard() instanceof PathGuard) {
             $pathGuard = $tool->getPathGuard();
@@ -86,51 +95,197 @@ class ScopedToolProxy implements ToolContract
         return false;
     }
 
+    /**
+     * @param  array<int, string>  $prefixes
+     */
+    public function setAllowedPrefixes(array $prefixes): self
+    {
+        if (method_exists($this->tool, 'setAllowedPrefixes')) {
+            $this->tool->setAllowedPrefixes($prefixes);
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function getAllowedPrefixes(): array
+    {
+        if (method_exists($this->tool, 'getAllowedPrefixes')) {
+            return (array) $this->tool->getAllowedPrefixes();
+        }
+
+        return [];
+    }
+
+    /**
+     * Forward auxiliary tool configuration calls cleanly to the wrapped tool.
+     *
+     * @param  array<int, mixed>  $arguments
+     */
+    public function __call(string $method, array $arguments): mixed
+    {
+        if (method_exists($this->tool, $method)) {
+            $result = $this->tool->{$method}(...$arguments);
+
+            return $result === $this->tool ? $this : $result;
+        }
+
+        throw new \BadMethodCallException('Call to undefined method ' . static::class . "::{$method}()");
+    }
+
     public function execute(array $params): array
     {
-        // If scope paths are restricted and params target a path or directory, enforce the scope boundary
-        if (! empty($this->scopePaths)) {
-            if (isset($params['path'])) {
-                $this->validateScope((string) $params['path']);
-            }
-            if (isset($params['directory'])) {
-                $this->validateScope((string) $params['directory']);
-            }
-            if (isset($params['directories']) && is_array($params['directories'])) {
-                foreach ($params['directories'] as $dir) {
-                    if (is_string($dir)) {
-                        $this->validateScope($dir);
-                    }
-                }
-            }
-            if (isset($params['files']) && is_array($params['files'])) {
-                foreach ($params['files'] as $f) {
-                    if (is_array($f) && isset($f['path']) && is_string($f['path'])) {
-                        $this->validateScope($f['path']);
-                    }
+        $isReadTool = $this->tool instanceof FileReaderTool || $this->tool instanceof CodebaseInspectorTool;
+        $isWriteTool = $this->tool instanceof PatchWriterTool || $this->tool instanceof DirectoryScaffolderTool;
+
+        $targetPaths = $this->extractTargetPaths($params);
+
+        // 1. Always block targets matching skill ignore_paths
+        if (! empty($this->ignorePaths)) {
+            foreach ($targetPaths as $targetPath) {
+                $rel = $this->resolveRelative($targetPath);
+                if ($rel !== '.' && $this->pathGuard->matchesAnyGlob($rel, $this->ignorePaths)) {
+                    throw new RuntimeException("Access blocked by skill ignore_paths: [{$rel}]");
                 }
             }
         }
 
-        // If underlying tool is PatchWriterTool, configure its allowedPrefixes
-        if ($this->tool instanceof PatchWriterTool && ! empty($this->scopePaths)) {
-            $cleanPrefixes = array_map(function ($p) {
-                return rtrim(preg_replace('/(\/\*\*|\/\*|\*)$/', '', $p) ?? $p, '/\\') . '/';
-            }, $this->scopePaths);
+        // 2. Enforce read/explore vs write/modify boundaries
+        if ($isReadTool) {
+            if ($this->hasExplicitExplorePaths) {
+                if (method_exists($this->tool, 'setAllowedExplorePaths')) {
+                    $this->tool->setAllowedExplorePaths($this->explorePaths);
+                }
+                if (method_exists($this->tool, 'setIgnorePaths')) {
+                    $this->tool->setIgnorePaths($this->ignorePaths);
+                }
 
-            $this->tool->setAllowedPrefixes($cleanPrefixes);
+                foreach ($targetPaths as $targetPath) {
+                    $this->validateExploreScope($targetPath);
+                }
+            } elseif (! empty($this->scopePaths)) {
+                foreach ($targetPaths as $targetPath) {
+                    $this->validateScope($targetPath);
+                }
+            }
+        } else {
+            if (! empty($this->scopePaths)) {
+                foreach ($targetPaths as $targetPath) {
+                    $this->validateScope($targetPath);
+                }
+            }
+
+            if ($isWriteTool && $this->hasExplicitModifyPaths) {
+                foreach ($targetPaths as $targetPath) {
+                    $this->validateModifyScope($targetPath);
+                }
+            }
         }
 
-        // If underlying tool is DirectoryScaffolderTool, configure its allowedPrefixes
+        // 3. Propagate prefixes and skill modify/ignore rules to underlying write tools
+        if ($this->tool instanceof PatchWriterTool) {
+            if (! empty($this->scopePaths)) {
+                $this->tool->setAllowedPrefixes($this->toPrefixes($this->scopePaths));
+            }
+            if ($this->hasExplicitModifyPaths) {
+                $this->tool->setAllowedModifyPaths($this->modifyPaths, enforce: true);
+            }
+            if (! empty($this->ignorePaths)) {
+                $this->tool->setIgnorePaths($this->ignorePaths);
+            }
+        }
+
         if ($this->tool instanceof DirectoryScaffolderTool && ! empty($this->scopePaths)) {
-            $cleanPrefixes = array_map(function ($p) {
-                return rtrim(preg_replace('/(\/\*\*|\/\*|\*)$/', '', $p) ?? $p, '/\\') . '/';
-            }, $this->scopePaths);
-
-            $this->tool->setAllowedPrefixes($cleanPrefixes);
+            $this->tool->setAllowedPrefixes($this->toPrefixes($this->scopePaths));
         }
 
         return $this->tool->execute($params);
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     * @return array<int, string>
+     */
+    protected function extractTargetPaths(array $params): array
+    {
+        $paths = [];
+        if (isset($params['path']) && is_string($params['path']) && trim($params['path']) !== '') {
+            $paths[] = $params['path'];
+        }
+        if (isset($params['directory']) && is_string($params['directory']) && trim($params['directory']) !== '') {
+            $paths[] = $params['directory'];
+        }
+        if (isset($params['directories']) && is_array($params['directories'])) {
+            foreach ($params['directories'] as $dir) {
+                if (is_string($dir) && trim($dir) !== '') {
+                    $paths[] = $dir;
+                }
+            }
+        }
+        if (isset($params['files']) && is_array($params['files'])) {
+            foreach ($params['files'] as $f) {
+                if (is_array($f) && isset($f['path']) && is_string($f['path']) && trim($f['path']) !== '') {
+                    $paths[] = $f['path'];
+                }
+            }
+        }
+
+        return $paths;
+    }
+
+    /**
+     * @param  array<int, string>  $globs
+     * @return array<int, string>
+     */
+    protected function toPrefixes(array $globs): array
+    {
+        return array_map(
+            static fn (string $p): string => rtrim(preg_replace('/(\/\*\*|\/\*|\*)$/', '', $p) ?? $p, '/\\') . '/',
+            $globs
+        );
+    }
+
+    protected function resolveRelative(string $path): string
+    {
+        $safePath = $this->pathGuard->resolveSafePath($path, mustExist: false);
+
+        return $this->pathGuard->getRelativePath($safePath);
+    }
+
+    protected function validateExploreScope(string $path): void
+    {
+        $safePath = $this->pathGuard->resolveSafePath($path, mustExist: false);
+        $rel = $this->pathGuard->getRelativePath($safePath);
+
+        if (empty($this->explorePaths)) {
+            throw new RuntimeException("Read access blocked: active skill does not allow reading [{$rel}].");
+        }
+
+        $isDir = is_dir($safePath);
+        $allowed = $isDir
+            ? $this->pathGuard->isDirectoryWithinGlobs($rel, $this->explorePaths)
+            : $this->pathGuard->matchesAnyGlob($rel, $this->explorePaths);
+
+        if (! $allowed) {
+            $list = implode(', ', $this->explorePaths);
+            throw new RuntimeException("Read access blocked: [{$rel}] is outside skill explore_paths/modify_paths: [{$list}]");
+        }
+    }
+
+    protected function validateModifyScope(string $path): void
+    {
+        $rel = $this->resolveRelative($path);
+
+        if (empty($this->modifyPaths)) {
+            throw new RuntimeException("Skill modify_paths violation: Target path [{$rel}] cannot be modified because active skill is read-only.");
+        }
+
+        if (! $this->pathGuard->matchesAnyGlob($rel, $this->modifyPaths)) {
+            $list = implode(', ', $this->modifyPaths);
+            throw new RuntimeException("Skill modify_paths violation: Target path [{$rel}] is outside permitted modify_paths: [{$list}]");
+        }
     }
 
     /**
@@ -138,30 +293,10 @@ class ScopedToolProxy implements ToolContract
      */
     protected function validateScope(string $path): void
     {
-        $safePath = $this->pathGuard->resolveSafePath($path, mustExist: false);
-        $rel = $this->pathGuard->getRelativePath($safePath);
-        $relNormalized = trim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $rel), DIRECTORY_SEPARATOR);
+        $rel = $this->resolveRelative($path);
 
-        foreach ($this->scopePaths as $scope) {
-            $cleanScope = trim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $scope), DIRECTORY_SEPARATOR);
-
-            // Handle wildcards (e.g. database/migrations/** or app/Models/*)
-            if (str_ends_with($cleanScope, '**') || str_ends_with($cleanScope, '*')) {
-                $baseScope = rtrim(preg_replace('/(\/\*\*|\/\*|\*)$/', '', $cleanScope) ?? $cleanScope, DIRECTORY_SEPARATOR);
-                if ($relNormalized === $baseScope || str_starts_with($relNormalized, $baseScope . DIRECTORY_SEPARATOR)) {
-                    return;
-                }
-            }
-
-            // Prefix or exact match
-            if ($relNormalized === $cleanScope || str_starts_with($relNormalized, $cleanScope . DIRECTORY_SEPARATOR)) {
-                return;
-            }
-
-            // Glob pattern match
-            if (fnmatch($cleanScope, $relNormalized, FNM_PATHNAME) || fnmatch($cleanScope, basename($relNormalized))) {
-                return;
-            }
+        if ($this->pathGuard->matchesAnyGlob($rel, $this->scopePaths)) {
+            return;
         }
 
         $scopeList = implode(', ', $this->scopePaths);

@@ -9,6 +9,23 @@ agents:
 allowed_tools:
   - file_reader
   - patch_writer
+explore_paths:
+  - app/**
+  - database/**
+  - routes/**
+  - tests/**
+modify_paths:
+  - app/**
+  - database/**
+  - routes/**
+  - tests/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - .env*
 tags:
   - editing
   - patching
@@ -30,3 +47,6 @@ When generating patches or creating files in the repository:
 
 3. **Read Before Writing:**
    - Inspect existing files via `file_reader` before applying patches to understand existing namespace declarations, trait usages, and class inheritance.
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

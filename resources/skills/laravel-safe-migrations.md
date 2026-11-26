@@ -8,6 +8,22 @@ allowed_tools:
   - file_reader
   - patch_writer
   - artisan_runner
+explore_paths:
+  - database/migrations/**
+  - app/Models/**
+  - app/Domains/**/Models/**
+modify_paths:
+  - database/migrations/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - app/Http/**
+  - routes/**
+  - resources/**
+  - tests/**
 tags:
   - database
   - migrations
@@ -39,3 +55,6 @@ When creating or modifying database migration files in `database/migrations/`:
      - Table creation: `Schema::dropIfExists('table_name');`.
      - Added columns: `$table->dropForeign(['user_id']); $table->dropColumn('user_id');`.
    - Never omit or leave `down()` empty.
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

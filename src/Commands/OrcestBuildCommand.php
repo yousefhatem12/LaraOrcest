@@ -26,6 +26,7 @@ class OrcestBuildCommand extends Command
                             {--no-swagger : Bypass Swagger / OpenAPI documentation generation}
                             {--swagger-format= : Output format for OpenAPI documentation (json, yaml, both)}
                             {--swagger-path= : Custom output file path for Swagger documentation}
+                            {--laravel-version= : Target Laravel version constraint to install (e.g. ^12.0, ^11.0)}
                             {--dry-run : Preview changes and plans without writing to disk or Git}
                             {--max-fix-attempts= : Maximum bug-fix loop retries}
                             {--max-steps= : Maximum graph execution steps}
@@ -101,6 +102,14 @@ class OrcestBuildCommand extends Command
 
         if ($this->option('swagger-path')) {
             $options['swagger_path'] = (string) $this->option('swagger-path');
+        }
+
+        if ($this->option('laravel-version')) {
+            $laravelVersion = trim((string) $this->option('laravel-version'));
+            if ($laravelVersion !== '') {
+                $options['laravel_version'] = $laravelVersion;
+                $options['package_manager'] = ['laravel_version' => $laravelVersion];
+            }
         }
 
         $options['on_step'] = function (RunState $state, string $node, string $message) {

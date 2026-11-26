@@ -10,10 +10,13 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Yousef\LaraOrcest\Console\Concerns\InteractsWithOnboarding;
 use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class InitCommand extends Command
 {
+    use InteractsWithOnboarding;
+
     protected static $defaultName = 'init';
 
     protected function configure(): void
@@ -23,6 +26,7 @@ class InitCommand extends Command
             ->setDescription('Initialize a LaraOrcest workspace configuration pointing to a target Laravel project directory.')
             ->addArgument('project-dir', InputArgument::OPTIONAL, 'Target Laravel project directory path (default: current directory)', '.')
             ->addOption('target', 't', InputOption::VALUE_OPTIONAL, 'Explicit target Laravel project directory path')
+            ->addOption('laravel-version', null, InputOption::VALUE_OPTIONAL, 'Target Laravel version constraint to install (e.g. ^12.0, ^11.0)')
             ->addOption('format', 'f', InputOption::VALUE_OPTIONAL, 'Config file format (json or php)', 'json')
             ->addOption('create', 'c', InputOption::VALUE_NONE, 'Create target directory if it does not exist')
             ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing configuration file if present');
@@ -64,6 +68,19 @@ class InitCommand extends Command
             $io->text("Discovered existing Laravel workspace at: <info>{$canonicalTarget}</info>");
         }
 
+        $explicitVersion = trim((string) ($input->getOption('laravel-version') ?? ''));
+        $savedVersion = $this->readSavedLaravelVersion($canonicalTarget);
+        $defaultVersion = $savedVersion ?? '^12.0';
+
+        if ($explicitVersion !== '') {
+            $laravelVersion = $explicitVersion;
+            $io->text("Target Laravel Version: <info>{$laravelVersion}</info>");
+        } elseif ($this->canPromptInteractively($input)) {
+            $laravelVersion = $this->promptLaravelVersion($io, $defaultVersion);
+        } else {
+            $laravelVersion = $defaultVersion;
+        }
+
         // Initialize target directories
         $targetOrcestDir = $canonicalTarget . DIRECTORY_SEPARATOR . '.lara-orcest';
         if (! is_dir($targetOrcestDir)) {
@@ -84,6 +101,10 @@ class InitCommand extends Command
             'target_path' => $canonicalTarget,
             'workspace_mode' => WorkspaceContext::MODE_STANDALONE,
             'created_at' => date('c'),
+            'package_manager' => [
+                'default_laravel_version' => $laravelVersion,
+                'laravel_version' => $laravelVersion,
+            ],
             'orchestration' => [
                 'max_steps' => 40,
                 'max_fix_attempts' => 3,
@@ -130,6 +151,7 @@ class InitCommand extends Command
 
         $io->listing([
             "Target Laravel Path: {$canonicalTarget}",
+            "Target Laravel Version: {$laravelVersion}",
             "Workspace Mode: standalone",
             "State Directory: {$stateDir}",
             "Config File: {$targetConfigFile}",

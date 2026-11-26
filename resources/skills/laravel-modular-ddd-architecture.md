@@ -8,6 +8,24 @@ agents:
 allowed_tools:
   - file_reader
   - codebase_inspector
+explore_paths:
+  - composer.json
+  - app/Models/**
+  - app/Domains/**
+  - app/Services/**
+  - app/Actions/**
+  - app/Providers/**
+  - routes/*.php
+  - config/**
+modify_paths: []
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - public/**
+  - resources/views/**
 tags:
   - architecture
   - ddd
@@ -35,3 +53,6 @@ When architecting complex Laravel applications with Domain-Driven Design princip
    - Enforce tenant isolation at the database, query scope, and policy levels.
    - Every tenant-owned resource must include foreign key linkage (e.g., `tenant_id` or `organization_id`) with database composite indexes.
    - Global scopes or automatic query filtering must be planned to prevent data leakage between tenants.
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths` (none — read-only architecture design), and NEVER scan or load files outside these globs or in `ignore_paths`.

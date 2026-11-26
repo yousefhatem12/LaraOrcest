@@ -8,6 +8,24 @@ allowed_tools:
   - file_reader
   - patch_writer
   - artisan_runner
+explore_paths:
+  - database/seeders/**
+  - database/factories/**
+  - app/Models/**
+  - app/Domains/**/Models/**
+  - database/migrations/**
+modify_paths:
+  - database/seeders/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - app/Http/**
+  - routes/**
+  - resources/**
+  - tests/**
 tags:
   - seeders
   - database
@@ -32,3 +50,6 @@ When creating database seeders in `database/seeders/`:
 3. **Factory & Relational Composition:**
    - For bulk demo data, leverage model factories with explicit relationship attachment.
    - Never hardcode production secrets or sensitive credentials in seeders. Use environment variables with safe development fallbacks.
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

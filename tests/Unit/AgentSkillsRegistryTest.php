@@ -157,6 +157,27 @@ class AgentSkillsRegistryTest extends TestCase
             $this->assertNotEmpty($skill->description, "Skill [{$name}] must have a non-empty description.");
             $this->assertNotEmpty($skill->agents, "Skill [{$name}] must list at least one agent in frontmatter.");
             $this->assertNotEmpty($skill->instructions, "Skill [{$name}] must have markdown content.");
+            $this->assertTrue(
+                $skill->hasDeclaredExplorePaths(),
+                "Skill [{$name}] must explicitly declare explore_paths in frontmatter."
+            );
+            $this->assertNotEmpty(
+                $skill->explorePaths(),
+                "Skill [{$name}] must define non-empty explore_paths."
+            );
+            $this->assertTrue(
+                $skill->hasExplicitModifyPaths,
+                "Skill [{$name}] must explicitly declare modify_paths in frontmatter (use [] for read-only)."
+            );
+            $this->assertNotEmpty(
+                $skill->ignorePaths(),
+                "Skill [{$name}] must define non-empty ignore_paths."
+            );
+            $this->assertStringContainsString(
+                'Token-Budget & Minimal-Context Rules',
+                $skill->instructions,
+                "Skill [{$name}] must include Token-Budget & Minimal-Context Rules."
+            );
         }
     }
 

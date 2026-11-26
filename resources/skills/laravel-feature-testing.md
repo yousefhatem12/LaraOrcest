@@ -9,6 +9,25 @@ allowed_tools:
   - patch_writer
   - test_runner
   - artisan_runner
+explore_paths:
+  - routes/**
+  - app/Models/**
+  - app/Http/Controllers/**
+  - app/Http/Requests/**
+  - app/Http/Resources/**
+  - app/Actions/**
+  - database/migrations/**
+  - database/factories/**
+  - tests/**
+modify_paths:
+  - tests/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - resources/views/**
 tags:
   - testing
   - feature-tests
@@ -41,3 +60,6 @@ When authoring automated tests in `tests/Feature/` or `tests/Unit/`:
 
 4. **Directory Conformance:**
    - Restrict all test file creations strictly to `tests/**` (`tests/Feature/**` or `tests/Unit/**`).
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

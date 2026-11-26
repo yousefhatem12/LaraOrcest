@@ -12,11 +12,57 @@ use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class FileReaderTool implements ToolContract
 {
+    /**
+     * @var array<int, string>
+     */
+    protected array $allowedExplorePaths = [];
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $ignorePaths = [];
+
     public function __construct(
         protected ?PathGuard $pathGuard = null,
         protected ?WorkspaceContext $workspaceContext = null
     ) {
         $this->pathGuard = $pathGuard ?: ($workspaceContext ? $workspaceContext->createPathGuard() : new PathGuard());
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     */
+    public function setAllowedExplorePaths(array $paths): self
+    {
+        $this->allowedExplorePaths = array_values(array_filter($paths, static fn ($p) => is_string($p) && trim($p) !== ''));
+
+        return $this;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function getAllowedExplorePaths(): array
+    {
+        return $this->allowedExplorePaths;
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     */
+    public function setIgnorePaths(array $paths): self
+    {
+        $this->ignorePaths = array_values(array_filter($paths, static fn ($p) => is_string($p) && trim($p) !== ''));
+
+        return $this;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function getIgnorePaths(): array
+    {
+        return $this->ignorePaths;
     }
 
     public function getPathGuard(): PathGuard
@@ -104,6 +150,21 @@ class FileReaderTool implements ToolContract
         $safePath = $this->pathGuard->resolveSafePath($rawPath, mustExist: false);
         $relativePath = $this->pathGuard->getRelativePath($safePath);
 
+        if ($relativePath !== '.' && ! empty($this->ignorePaths) && $this->pathGuard->matchesAnyGlob($relativePath, $this->ignorePaths)) {
+            throw new RuntimeException("Read access blocked by skill ignore_paths: [{$relativePath}]");
+        }
+
+        if (! empty($this->allowedExplorePaths)) {
+            $isDir = is_dir($safePath);
+            $allowed = $isDir
+                ? $this->pathGuard->isDirectoryWithinGlobs($relativePath, $this->allowedExplorePaths)
+                : $this->pathGuard->matchesAnyGlob($relativePath, $this->allowedExplorePaths);
+
+            if (! $allowed) {
+                throw new RuntimeException("Read access blocked: [{$relativePath}] is outside skill explore_paths/modify_paths.");
+            }
+        }
+
         if (! file_exists($safePath)) {
             if ($mustExist) {
                 throw new RuntimeException("Target path does not exist: [{$safePath}]");
@@ -137,17 +198,32 @@ class FileReaderTool implements ToolContract
         $truncated = false;
 
         if ($recursive) {
-            $iterator = new \RecursiveIteratorIterator(
-                new \RecursiveDirectoryIterator($absolutePath, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS),
-                \RecursiveIteratorIterator::SELF_FIRST
+            $dirIterator = new \RecursiveDirectoryIterator($absolutePath, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::FOLLOW_SYMLINKS);
+            $filterIterator = new \RecursiveCallbackFilterIterator(
+                $dirIterator,
+                function (\SplFileInfo $current): bool {
+                    $itemRelPath = $this->pathGuard->getRelativePath($current->getPathname());
+                    if ($this->pathGuard->isDenied($itemRelPath) || $this->pathGuard->isDenied($current->getFilename())) {
+                        return false;
+                    }
+                    if (! empty($this->ignorePaths) && $this->pathGuard->matchesAnyGlob($itemRelPath, $this->ignorePaths)) {
+                        return false;
+                    }
+                    if ($current->isDir() && ! empty($this->allowedExplorePaths)) {
+                        return $this->pathGuard->isDirectoryWithinGlobs($itemRelPath, $this->allowedExplorePaths);
+                    }
+
+                    return true;
+                }
             );
+            $iterator = new \RecursiveIteratorIterator($filterIterator, \RecursiveIteratorIterator::SELF_FIRST);
             $iterator->setMaxDepth(5);
 
             foreach ($iterator as $item) {
                 $itemAbsPath = $item->getPathname();
                 $itemRelPath = $this->pathGuard->getRelativePath($itemAbsPath);
 
-                if ($this->pathGuard->isDenied($itemRelPath) || $this->pathGuard->isDenied($item->getFilename())) {
+                if (! $this->isEntryPermitted($itemRelPath, $item->isDir())) {
                     continue;
                 }
 
@@ -180,13 +256,18 @@ class FileReaderTool implements ToolContract
                     continue;
                 }
 
+                $isDir = is_dir($itemAbsPath);
+                if (! $this->isEntryPermitted($itemRelPath, $isDir)) {
+                    continue;
+                }
+
                 if ($pattern !== null && ! fnmatch($pattern, $file)) {
                     continue;
                 }
 
                 $entries[] = [
                     'path' => $itemRelPath,
-                    'type' => is_dir($itemAbsPath) ? 'directory' : 'file',
+                    'type' => $isDir ? 'directory' : 'file',
                     'size' => is_file($itemAbsPath) ? filesize($itemAbsPath) : null,
                 ];
 
@@ -205,6 +286,21 @@ class FileReaderTool implements ToolContract
             'total_entries' => count($entries),
             'truncated' => $truncated,
         ];
+    }
+
+    protected function isEntryPermitted(string $itemRelPath, bool $isDir): bool
+    {
+        if (! empty($this->ignorePaths) && $this->pathGuard->matchesAnyGlob($itemRelPath, $this->ignorePaths)) {
+            return false;
+        }
+
+        if (! empty($this->allowedExplorePaths)) {
+            return $isDir
+                ? $this->pathGuard->isDirectoryWithinGlobs($itemRelPath, $this->allowedExplorePaths)
+                : $this->pathGuard->matchesAnyGlob($itemRelPath, $this->allowedExplorePaths);
+        }
+
+        return true;
     }
 
     protected function readFile(string $absolutePath, string $relativePath, array $params): array

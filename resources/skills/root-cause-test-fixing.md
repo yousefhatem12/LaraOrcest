@@ -9,6 +9,25 @@ allowed_tools:
   - patch_writer
   - artisan_runner
   - test_runner
+explore_paths:
+  - app/**
+  - database/**
+  - routes/**
+  - tests/**
+  - config/**
+modify_paths:
+  - app/**
+  - database/**
+  - routes/**
+  - tests/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - public/**
+  - resources/**
 tags:
   - debugging
   - fixing
@@ -36,3 +55,6 @@ When diagnosing test failures, runtime exceptions, or review rejection constrain
    - Every fix execution increments the `fix_attempts` counter towards `max_fix_attempts` (default 3).
    - If a failure cannot be resolved within the retry budget, document the blockage cleanly in the root cause summary and avoid indefinite retry loops.
    - Record root cause summaries and resolutions in RunState metadata for post-run analysis.
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

@@ -9,6 +9,7 @@ use Yousef\LaraOrcest\Agents\Contracts\SubAgentInterface;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Skills\Skill;
+use Yousef\LaraOrcest\Skills\SkillRegistry;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Support\Config;
 
@@ -110,6 +111,11 @@ abstract class AbstractSubAgent implements SubAgentInterface
             "- Never access or request secret values (e.g. .env contents).";
 
         if (! empty($activeSkills)) {
+            $fileMap = SkillRegistry::buildAllowedFileMapForSkills($activeSkills, $scopes);
+            if ($fileMap !== '') {
+                $parts[] = $fileMap;
+            }
+
             $skillSections = ["ASSIGNED SKILLS & DIRECTIVES:"];
             foreach ($activeSkills as $skill) {
                 $skillSections[] = "### Skill: {$skill->name}\n{$skill->instructions}";

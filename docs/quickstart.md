@@ -297,6 +297,7 @@ php artisan orcest:approve run_67e199f1a0b34 --note="Approved"
 | Option | Description |
 | :--- | :--- |
 | `--target=/path/to/app` | Path to the external target Laravel workspace (`targetProjectPath`). |
+| `--laravel-version=^12.0` | Target Laravel version constraint (skips interactive version prompt). |
 | `--prompt="Your prompt"` | Prompt string (alternative to argument). |
 | `--dry-run` | Previews changes without touching the filesystem or Git. |
 | `--interactive` | Enables interactive Human-in-the-Loop review gates. |

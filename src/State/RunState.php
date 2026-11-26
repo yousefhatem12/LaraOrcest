@@ -170,6 +170,9 @@ class RunState
 
         $pmMeta = (array) ($options['package_manager'] ?? []);
         $pmMeta['enabled'] = $pmEnabled;
+        if (! empty($options['laravel_version'])) {
+            $pmMeta['laravel_version'] = (string) $options['laravel_version'];
+        }
         if ($noPackageManager) {
             $pmMeta['disabled'] = true;
         }

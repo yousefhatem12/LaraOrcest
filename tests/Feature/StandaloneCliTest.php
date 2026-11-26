@@ -175,4 +175,71 @@ class StandaloneCliTest extends TestCase
         $this->assertSame(0, $statusProcess->getExitCode());
         $this->assertStringContainsString(realpath($this->tempWorkspace), $statusProcess->getOutput());
     }
+
+    public function test_init_command_prompts_for_laravel_version_and_persists_to_config(): void
+    {
+        $app = new LaraOrcestApplication();
+        $tester = new ApplicationTester($app);
+        $tester->setInputs(['^11.0']);
+
+        $exitCode = $tester->run([
+            'command' => 'init',
+            'project-dir' => $this->tempWorkspace,
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('Which Laravel version would you like to install?', $display);
+        $this->assertStringContainsString('Selected Laravel Version: ^11.0', $display);
+
+        $configData = json_decode((string) file_get_contents($this->tempWorkspace . '/.lara-orcest/config.json'), true);
+        $this->assertSame('^11.0', $configData['package_manager']['laravel_version']);
+        $this->assertSame('^11.0', $configData['package_manager']['default_laravel_version']);
+    }
+
+    public function test_build_command_interactive_wizard_prompts_for_laravel_version_then_prompt(): void
+    {
+        $app = new LaraOrcestApplication();
+        $tester = new ApplicationTester($app);
+        $tester->setInputs(['^11.0', 'Build multi-tenant Subscription API']);
+
+        $exitCode = $tester->run([
+            'command' => 'build',
+            '--target' => $this->tempWorkspace,
+            '--dry-run' => true,
+            '--llm' => 'fake',
+            '--no-human-review' => true,
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('Which Laravel version would you like to install?', $display);
+        $this->assertStringContainsString('Selected Laravel Version: ^11.0', $display);
+        $this->assertStringContainsString('Enter your project prompt / requirements', $display);
+        $this->assertStringContainsString('Prompt: Build multi-tenant Subscription API', $display);
+        $this->assertStringContainsString('laravel/laravel:^11.0', $display);
+    }
+
+    public function test_build_command_supports_non_interactive_laravel_version_flag(): void
+    {
+        $app = new LaraOrcestApplication();
+        $tester = new ApplicationTester($app);
+
+        $exitCode = $tester->run([
+            'command' => 'build',
+            'prompt' => 'Build Inventory API',
+            '--target' => $this->tempWorkspace,
+            '--laravel-version' => '^11.0',
+            '--dry-run' => true,
+            '--llm' => 'fake',
+            '--no-human-review' => true,
+            '--no-interaction' => true,
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('Target Laravel Version: ^11.0', $display);
+        $this->assertStringContainsString('laravel/laravel:^11.0', $display);
+        $this->assertStringContainsString('Prompt: Build Inventory API', $display);
+    }
 }

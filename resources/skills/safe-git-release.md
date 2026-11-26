@@ -7,6 +7,21 @@ agents:
 allowed_tools:
   - git_command
   - file_reader
+explore_paths:
+  - composer.json
+  - routes/**
+  - app/**
+  - database/**
+  - tests/**
+  - docs/**
+modify_paths: []
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - .env*
 tags:
   - git
   - release
@@ -37,3 +52,6 @@ When managing Git operations, branch isolation, and milestone commits:
 4. **Dry-Run & Human-in-the-Loop Simulation:**
    - In dry-run mode (`--dry-run`), simulate Git branch creation and commit operations without touching disk or repo HEAD.
    - When Human-in-the-Loop gate `before_commit` is active, hold commit execution until explicit approval is granted.
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths` (none — Git release operations only), and NEVER scan or load files outside these globs or in `ignore_paths`.

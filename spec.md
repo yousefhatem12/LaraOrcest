@@ -1365,6 +1365,19 @@ Skills provide explicit, structured instructions for coding standards, architect
    allowed_tools:
      - file_reader
      - patch_writer
+   explore_paths:
+     - app/**
+     - database/**
+     - routes/**
+     - tests/**
+     - config/**
+   modify_paths: []
+   ignore_paths:
+     - vendor/**
+     - node_modules/**
+     - storage/**
+     - bootstrap/cache/**
+     - .git/**
    tags:
      - php
      - standards
@@ -1378,6 +1391,12 @@ Skills provide explicit, structured instructions for coding standards, architect
 3. **Progressive Disclosure:**
    - **Lightweight Summaries (`buildSummaries`):** Injected into system prompt overview (`name: description`), informing the model of available directives without burning context.
    - **Task-Specific Full Instructions (`buildInstructions`):** Resolved only for requested or active skills relevant to the task, bounded by `max_active_skills` (default: 5).
+4. **Token-Saving File Boundaries (`explore_paths`, `modify_paths`, `ignore_paths`):**
+   - `explore_paths` (`Skill::explorePaths()`): Narrow glob patterns the agent may read/inspect for context.
+   - `modify_paths` (`Skill::modifyPaths()`): Exact glob patterns the agent may create or patch (intersected with sub-agent `scopePaths()`). Read-only skills declare `modify_paths: []`.
+   - `ignore_paths` (`Skill::ignorePaths()`): Excluded globs (`vendor/**`, `node_modules/**`, `storage/**`, `.git/**`, unrelated layers) appended to `PathGuard` deny patterns so they are never scanned or loaded.
+   - **Enforcement:** `ToolRegistry`, `ScopedToolProxy`, `FileReaderTool`, `CodebaseInspectorTool`, `PatchWriterTool`, and `PathGuard` restrict reads/directory scans to `explore_paths ∪ modify_paths` (excluding `ignore_paths`) and restrict writes to `modify_paths ∩ scopePaths()`.
+   - **Allowed File Map Injection:** `AbstractAgent` and `AbstractSubAgent` inject a compact `ALLOWED FILE MAP` (`Explore Only`, `Can Modify`, `Ignore`) into the system prompt via `SkillRegistry::buildAllowedFileMap()` instead of dumping raw directory trees.
 
 ### 16.3 Hierarchical Sub-Agents & Team Delegation (`src/Agents/Teams/`)
 - `SubAgentInterface`: Defines `key()`, `parentAgentKey()`, `role()`, `goal()`, `backstory()`, `scopePaths()`, `allowedTools()`, `dependsOn()`, and `execute()`.

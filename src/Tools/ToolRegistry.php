@@ -10,6 +10,7 @@ use Yousef\LaraOrcest\Agents\Contracts\SubAgentInterface;
 use Yousef\LaraOrcest\Contracts\AgentContract;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Skills\Skill;
+use Yousef\LaraOrcest\Skills\SkillRegistry;
 use Yousef\LaraOrcest\Tools\Support\PathGuard;
 use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
@@ -138,15 +139,30 @@ class ToolRegistry
             $allowedTools = $this->resolveAllowedToolsForAgentKey($agent, array_merge($this->tools, $availableTools));
         }
 
-        // If active skill(s) define allowed_tools, filter against them
+        // If active skill(s) define allowed_tools, filter against them; also aggregate explore/modify/ignore paths
         $skillsList = is_array($activeSkill) ? $activeSkill : ($activeSkill !== null ? [$activeSkill] : []);
+        $skillExplorePaths = SkillRegistry::aggregateExplorePaths($skillsList);
+        $skillModifyPaths = SkillRegistry::aggregateModifyPaths($skillsList);
+        $skillIgnorePaths = SkillRegistry::aggregateIgnorePaths($skillsList);
+        $hasExplicitExplorePaths = false;
+        $hasExplicitModifyPaths = false;
+
         if (! empty($skillsList)) {
             $skillAllowedTools = [];
             $hasRestrictingSkill = false;
             foreach ($skillsList as $sk) {
-                if ($sk instanceof Skill && ! empty($sk->allowedTools) && ! in_array('*', $sk->allowedTools, true)) {
+                if (! ($sk instanceof Skill)) {
+                    continue;
+                }
+                if (! empty($sk->allowedTools) && ! in_array('*', $sk->allowedTools, true)) {
                     $hasRestrictingSkill = true;
                     $skillAllowedTools = array_unique(array_merge($skillAllowedTools, $sk->allowedTools));
+                }
+                if ($sk->hasDeclaredExplorePaths()) {
+                    $hasExplicitExplorePaths = true;
+                }
+                if ($sk->hasDeclaredModifyPaths()) {
+                    $hasExplicitModifyPaths = true;
                 }
             }
             if ($hasRestrictingSkill) {
@@ -163,19 +179,52 @@ class ToolRegistry
                 continue;
             }
 
-            $toolGuard = method_exists($tool, 'getPathGuard') && $tool->getPathGuard() instanceof PathGuard
-                ? $tool->getPathGuard()
+            // Clone path-aware tools to avoid mutating shared singletons across agent turns
+            $isPathAware = $tool instanceof FileReaderTool
+                || $tool instanceof CodebaseInspectorTool
+                || $tool instanceof PatchWriterTool
+                || $tool instanceof DirectoryScaffolderTool;
+
+            $isolatedTool = $isPathAware ? clone $tool : $tool;
+
+            $toolGuard = method_exists($isolatedTool, 'getPathGuard') && $isolatedTool->getPathGuard() instanceof PathGuard
+                ? $isolatedTool->getPathGuard()
                 : $this->pathGuard;
 
-            // Wrap with ScopedToolProxy if scopePaths are defined
-            if (! empty($effectiveScopePaths)) {
+            if ($isPathAware && ($isolatedTool instanceof FileReaderTool || $isolatedTool instanceof CodebaseInspectorTool)) {
+                if ($hasExplicitExplorePaths && method_exists($isolatedTool, 'setAllowedExplorePaths')) {
+                    $isolatedTool->setAllowedExplorePaths($skillExplorePaths);
+                }
+                if (! empty($skillIgnorePaths) && method_exists($isolatedTool, 'setIgnorePaths')) {
+                    $isolatedTool->setIgnorePaths($skillIgnorePaths);
+                }
+            }
+
+            if ($isolatedTool instanceof PatchWriterTool) {
+                if ($hasExplicitModifyPaths) {
+                    $isolatedTool->setAllowedModifyPaths($skillModifyPaths, enforce: true);
+                }
+                if (! empty($skillIgnorePaths)) {
+                    $isolatedTool->setIgnorePaths($skillIgnorePaths);
+                }
+            }
+
+            $shouldProxy = ! empty($effectiveScopePaths)
+                || ($isPathAware && ($hasExplicitExplorePaths || $hasExplicitModifyPaths || ! empty($skillIgnorePaths)));
+
+            if ($shouldProxy) {
                 $resolved[$toolName] = new ScopedToolProxy(
-                    tool: $tool,
+                    tool: $isolatedTool,
                     scopePaths: $effectiveScopePaths,
-                    pathGuard: $toolGuard
+                    pathGuard: $toolGuard,
+                    explorePaths: $skillExplorePaths,
+                    modifyPaths: $skillModifyPaths,
+                    ignorePaths: $skillIgnorePaths,
+                    hasExplicitExplorePaths: $hasExplicitExplorePaths,
+                    hasExplicitModifyPaths: $hasExplicitModifyPaths
                 );
             } else {
-                $resolved[$toolName] = $tool;
+                $resolved[$toolName] = $isolatedTool;
             }
         }
 

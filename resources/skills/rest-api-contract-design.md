@@ -9,6 +9,23 @@ agents:
 allowed_tools:
   - file_reader
   - codebase_inspector
+explore_paths:
+  - routes/**
+  - app/Http/Controllers/**
+  - app/Http/Requests/**
+  - app/Http/Resources/**
+  - app/Policies/**
+  - app/Models/**
+  - docs/**
+modify_paths: []
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - database/seeders/**
+  - resources/views/**
 tags:
   - api
   - rest
@@ -41,3 +58,6 @@ When designing RESTful APIs and endpoint interfaces in Laravel:
    - Specify route middleware: `auth:sanctum` or session auth.
    - Map each action to a Policy method (e.g., `view`, `create`, `update`, `delete`) inside `app/Policies/`.
    - Ensure the API specification is aligned with OpenAPI 3.0 / Swagger schema conventions.
+
+4. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths` (none — read-only API contract design), and NEVER scan or load files outside these globs or in `ignore_paths`.

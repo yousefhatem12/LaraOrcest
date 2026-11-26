@@ -11,6 +11,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Yousef\LaraOrcest\Console\Concerns\InteractsWithOnboarding;
 use Yousef\LaraOrcest\Orchestrator;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Support\TerminalAnnouncer;
@@ -18,6 +19,8 @@ use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
 class BuildCommand extends Command
 {
+    use InteractsWithOnboarding;
+
     protected static $defaultName = 'build';
 
     protected function configure(): void
@@ -28,6 +31,7 @@ class BuildCommand extends Command
             ->addArgument('prompt', InputArgument::OPTIONAL, 'Feature requirement prompt to orchestrate')
             ->addOption('prompt', null, InputOption::VALUE_OPTIONAL, 'Feature requirement prompt alternative option')
             ->addOption('target', 't', InputOption::VALUE_OPTIONAL, 'Path to target Laravel project directory')
+            ->addOption('laravel-version', null, InputOption::VALUE_OPTIONAL, 'Target Laravel version constraint to install (e.g. ^12.0, ^11.0)')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Preview changes and plans without writing to disk or Git')
             ->addOption('interactive', 'i', InputOption::VALUE_NONE, 'Enable interactive human-in-the-loop review and approval gates')
             ->addOption('no-human-review', null, InputOption::VALUE_NONE, 'Bypass human-in-the-loop review gates and execute autonomously')
@@ -54,16 +58,46 @@ class BuildCommand extends Command
         $prompt = (string) ($input->getArgument('prompt') ?: $input->getOption('prompt') ?: '');
         $dryRun = (bool) $input->getOption('dry-run');
 
+        // 1. Resolve target workspace context
+        $explicitTarget = $input->getOption('target');
+        $context = WorkspaceContext::detect($explicitTarget ? (string) $explicitTarget : null);
+        $context->ensureDirectoriesExist();
+
+        // 1b. Resolve or prompt for target Laravel version (Step 2)
+        $explicitLaravelVersion = trim((string) ($input->getOption('laravel-version') ?? ''));
+        $savedLaravelVersion = $this->readSavedLaravelVersion($context->getTargetProjectPath());
+        $configuredDefaultVersion = (string) $context->getConfig()->get('package_manager.default_laravel_version', '^12.0');
+        $laravelVersion = $savedLaravelVersion ?? ($configuredDefaultVersion !== '' ? $configuredDefaultVersion : '^12.0');
+
+        if ($explicitLaravelVersion !== '') {
+            $laravelVersion = $explicitLaravelVersion;
+            $io->text("Target Laravel Version: <info>{$laravelVersion}</info>");
+        } elseif ($resumeId === '') {
+            if ($savedLaravelVersion !== null) {
+                $laravelVersion = $savedLaravelVersion;
+                $io->text("Target Laravel Version (from workspace config): <info>{$laravelVersion}</info>");
+            } elseif ($this->canPromptInteractively($input)) {
+                $laravelVersion = $this->promptLaravelVersion($io, '^12.0');
+            }
+        }
+
+        if ($resumeId === '') {
+            $context->getConfig()->set('package_manager.default_laravel_version', $laravelVersion);
+            $context->getConfig()->set('package_manager.laravel_version', $laravelVersion);
+            $this->persistLaravelVersionToWorkspaceConfig($context->getTargetProjectPath(), $laravelVersion);
+        }
+
+        // 1c. Capture project prompt interactively when omitted (Step 3)
+        if ($resumeId === '' && trim($prompt) === '' && $this->canPromptInteractively($input)) {
+            $promptAnswer = $io->ask('Enter your project prompt / requirements');
+            $prompt = is_string($promptAnswer) ? trim($promptAnswer) : '';
+        }
+
         if ($resumeId === '' && trim($prompt) === '') {
             $io->error('Please provide a prompt argument or use --prompt="Your requirement", or use --resume=<run_id>.');
 
             return Command::FAILURE;
         }
-
-        // 1. Resolve target workspace context
-        $explicitTarget = $input->getOption('target');
-        $context = WorkspaceContext::detect($explicitTarget ? (string) $explicitTarget : null);
-        $context->ensureDirectoriesExist();
 
         // 2. Build execution options
         $options = [
@@ -71,6 +105,10 @@ class BuildCommand extends Command
             'workspace_context' => $context,
             'target_project_path' => $context->getTargetProjectPath(),
             'workspace_mode' => $context->getWorkspaceMode(),
+            'laravel_version' => $laravelVersion,
+            'package_manager' => [
+                'laravel_version' => $laravelVersion,
+            ],
         ];
 
         if ($input->getOption('max-steps')) {

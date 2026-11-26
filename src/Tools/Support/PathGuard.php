@@ -209,6 +209,177 @@ class PathGuard
         return false;
     }
 
+    /**
+     * Returns a cloned PathGuard with additional ignore/deny glob patterns appended.
+     *
+     * @param  array<int, string>  $extraPatterns
+     */
+    public function withAdditionalDenyPatterns(array $extraPatterns): self
+    {
+        $merged = array_values(array_unique(array_filter(
+            array_merge($this->denyPatterns, $extraPatterns),
+            static fn ($p) => is_string($p) && trim($p) !== ''
+        )));
+
+        return new self(
+            projectRoot: $this->projectRoot,
+            denyPatterns: $merged,
+            maxFileSize: $this->maxFileSize,
+            workspaceContext: $this->workspaceContext
+        );
+    }
+
+    /**
+     * Checks whether a relative path matches any glob pattern in the list.
+     *
+     * @param  array<int, string>  $globs
+     */
+    public function matchesAnyGlob(string $relativePath, array $globs): bool
+    {
+        $clean = $this->normalizeRelativePath($relativePath);
+        if ($clean === '' || $clean === '.') {
+            return true;
+        }
+
+        foreach ($globs as $glob) {
+            if (is_string($glob) && $this->globMatches($clean, $glob)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Checks whether a directory could contain or intersect any allowed glob pattern.
+     *
+     * @param  array<int, string>  $globs
+     */
+    public function isDirectoryWithinGlobs(string $relativeDir, array $globs): bool
+    {
+        $cleanDir = $this->normalizeRelativePath($relativeDir);
+        if ($cleanDir === '' || $cleanDir === '.') {
+            return true;
+        }
+
+        foreach ($globs as $glob) {
+            if (! is_string($glob)) {
+                continue;
+            }
+
+            $cleanGlob = $this->normalizeRelativePath($glob);
+            if ($cleanGlob === '' || $cleanGlob === '*' || $cleanGlob === '**') {
+                return true;
+            }
+
+            // Directory itself matches the glob (e.g. app/Models inside app/** or app/Models/**)
+            if ($this->globMatches($cleanDir, $cleanGlob)) {
+                return true;
+            }
+
+            // Directory is an ancestor of the glob (e.g. 'app' or 'app/Domains' for 'app/Domains/**/Models/**')
+            $staticPrefix = $this->extractStaticPrefix($cleanGlob);
+            if ($staticPrefix !== '' && ($staticPrefix === $cleanDir || str_starts_with($staticPrefix, $cleanDir . '/'))) {
+                return true;
+            }
+
+            // Compare segment-by-segment up to wildcard '**'
+            $dirSegments = explode('/', $cleanDir);
+            $globSegments = explode('/', $cleanGlob);
+            $compatible = true;
+            foreach ($dirSegments as $i => $dirSeg) {
+                if (! isset($globSegments[$i])) {
+                    $compatible = false;
+                    break;
+                }
+                $globSeg = $globSegments[$i];
+                if ($globSeg === '**') {
+                    break;
+                }
+                if (! fnmatch($globSeg, $dirSeg)) {
+                    $compatible = false;
+                    break;
+                }
+            }
+            if ($compatible) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Matches a normalized relative path against a glob pattern supporting '**', '*', and '?'.
+     */
+    public function globMatches(string $relativePath, string $pattern): bool
+    {
+        $path = $this->normalizeRelativePath($relativePath);
+        $cleanPattern = $this->normalizeRelativePath($pattern);
+
+        if ($cleanPattern === '') {
+            return false;
+        }
+
+        if ($cleanPattern === '*' || $cleanPattern === '**') {
+            return true;
+        }
+
+        if ($path === $cleanPattern || str_starts_with($path, $cleanPattern . '/')) {
+            return true;
+        }
+
+        if (str_ends_with($cleanPattern, '/**')) {
+            $base = substr($cleanPattern, 0, -3);
+            if ($base !== '' && ! str_contains($base, '*') && ! str_contains($base, '?')) {
+                return $path === $base || str_starts_with($path, $base . '/');
+            }
+        }
+
+        $regex = $this->compileGlobToRegex($cleanPattern);
+        if (preg_match($regex, $path) === 1) {
+            return true;
+        }
+
+        // Support basename-only patterns like *.key or *.pem when pattern contains no slash
+        if (! str_contains($cleanPattern, '/')) {
+            return fnmatch($cleanPattern, basename($path));
+        }
+
+        return false;
+    }
+
+    protected function normalizeRelativePath(string $path): string
+    {
+        return trim(str_replace('\\', '/', trim($path)), '/');
+    }
+
+    protected function extractStaticPrefix(string $normalizedGlob): string
+    {
+        $segments = explode('/', $normalizedGlob);
+        $prefix = [];
+        foreach ($segments as $seg) {
+            if (str_contains($seg, '*') || str_contains($seg, '?')) {
+                break;
+            }
+            $prefix[] = $seg;
+        }
+
+        return implode('/', $prefix);
+    }
+
+    protected function compileGlobToRegex(string $normalizedGlob): string
+    {
+        $quoted = preg_quote($normalizedGlob, '#');
+        $quoted = str_replace(
+            ['\*\*/', '\*\*', '\*', '\?'],
+            ['(?:.+/)?', '.*', '[^/]*', '[^/]'],
+            $quoted
+        );
+
+        return '#^' . $quoted . '$#';
+    }
+
     public function getMaxFileSize(): int
     {
         return $this->maxFileSize;
@@ -270,6 +441,13 @@ class PathGuard
         }
 
         foreach ($allowedPrefixes as $prefix) {
+            if (str_contains($prefix, '*') || str_contains($prefix, '?')) {
+                if ($this->globMatches($relativePath, $prefix)) {
+                    return true;
+                }
+                continue;
+            }
+
             $normalizedPrefix = trim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $prefix), DIRECTORY_SEPARATOR);
             if (str_starts_with($relativePath, $normalizedPrefix) || $relativePath === $normalizedPrefix) {
                 return true;
@@ -296,17 +474,6 @@ class PathGuard
 
     protected function matchesPattern(string $path, string $pattern): bool
     {
-        $pattern = trim(str_replace(['\\', '/'], DIRECTORY_SEPARATOR, $pattern), DIRECTORY_SEPARATOR);
-        if ($pattern === '') {
-            return false;
-        }
-
-        // Exact match or folder prefix match
-        if ($path === $pattern || str_starts_with($path, $pattern . DIRECTORY_SEPARATOR)) {
-            return true;
-        }
-
-        // Wildcard match on full relative path or basename
-        return fnmatch($pattern, $path, FNM_PATHNAME) || fnmatch($pattern, basename($path));
+        return $this->globMatches($path, $pattern);
     }
 }

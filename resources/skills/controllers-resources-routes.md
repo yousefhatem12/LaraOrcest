@@ -8,6 +8,27 @@ allowed_tools:
   - file_reader
   - patch_writer
   - artisan_runner
+explore_paths:
+  - routes/**
+  - app/Http/Controllers/**
+  - app/Http/Requests/**
+  - app/Http/Resources/**
+  - app/Actions/**
+  - app/Services/**
+  - app/Models/**
+modify_paths:
+  - app/Http/Controllers/**
+  - app/Http/Resources/**
+  - routes/**
+  - app/Domains/**/Controllers/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - database/**
+  - resources/views/**
 tags:
   - controllers
   - resources
@@ -40,3 +61,6 @@ When creating API controllers in `app/Http/Controllers/Api/`, API resources in `
 4. **RESTful Route Registration:**
    - Group API routes in `routes/api.php` with clear prefixes and middleware (`auth:sanctum`).
    - Use `Route::apiResource('tasks', TaskController::class);` or explicit HTTP verb methods (`Route::get`, `Route::post`, `Route::put`, `Route::delete`).
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

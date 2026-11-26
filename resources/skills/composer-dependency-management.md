@@ -8,6 +8,22 @@ allowed_tools:
   - composer_runner
   - file_reader
   - codebase_inspector
+explore_paths:
+  - composer.json
+  - composer.lock
+  - config/**
+modify_paths:
+  - composer.json
+  - composer.lock
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - app/**
+  - database/**
+  - resources/**
 tags:
   - composer
   - dependencies
@@ -39,3 +55,6 @@ When evaluating, installing, and updating Composer packages requested by the `te
 4. **State Recording & Lockfile Hygiene:**
    - Record all required packages, versions, and installation outcomes in `RunState` artifacts and metadata.
    - Ensure lockfile consistency and run `composer validate` if needed to confirm valid schema.
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.

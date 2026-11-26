@@ -12,6 +12,7 @@ use Yousef\LaraOrcest\Skills\Skill;
 use Yousef\LaraOrcest\Skills\SkillRegistry;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Tools\ToolRegistry;
 
 abstract class AbstractAgent implements AgentContract
 {
@@ -36,6 +37,11 @@ abstract class AbstractAgent implements AgentContract
             $skillsSummary = $this->buildSkillsPromptSection($state, includeFullInstructions: false);
             if (! empty($skillsSummary)) {
                 $parts[] = $skillsSummary;
+            }
+
+            $fileMap = $this->buildAllowedFileMapSection($state);
+            if (! empty($fileMap)) {
+                $parts[] = $fileMap;
             }
 
             // If explicit skills were requested in state metadata, inject their full instructions
@@ -78,8 +84,8 @@ abstract class AbstractAgent implements AgentContract
      */
     public function execute(RunState $state, array $tools, LlmDriverContract $llm): RunState
     {
-        // Filter tools to only those allowed for this agent
-        $authorizedTools = $this->authorizeTools($tools);
+        // Filter and scope tools to only those allowed for this agent and its active skills
+        $authorizedTools = $this->authorizeTools($tools, $state);
 
         $userPrompt = $this->buildUserPrompt($state);
 
@@ -145,12 +151,12 @@ abstract class AbstractAgent implements AgentContract
     }
 
     /**
-     * Filter provided tools by the agent's allow-list.
+     * Filter provided tools by the agent's allow-list and enforce skill explore/modify/ignore paths.
      *
      * @param  array<string, ToolContract>  $tools
      * @return array<string, ToolContract>
      */
-    protected function authorizeTools(array $tools): array
+    protected function authorizeTools(array $tools, ?RunState $state = null): array
     {
         $allowed = $this->getAllowedTools();
         $authorized = [];
@@ -159,6 +165,36 @@ abstract class AbstractAgent implements AgentContract
             if (in_array($tool->getName(), $allowed, true) || in_array($key, $allowed, true)) {
                 $authorized[$tool->getName()] = $tool;
             }
+        }
+
+        if (empty($authorized)) {
+            return $authorized;
+        }
+
+        try {
+            $registry = $this->getSkillRegistry();
+            if ($registry->isEnabled()) {
+                $requested = $state !== null
+                    ? (array) ($state->metadata['active_skills'] ?? [])
+                    : [];
+                if (empty($requested)) {
+                    $requested = $this->getSkills();
+                }
+
+                $activeSkills = $registry->resolveActiveSkills($this->getName(), $requested);
+                if (! empty($activeSkills)) {
+                    $toolRegistry = new ToolRegistry();
+
+                    return $toolRegistry->resolveForAgent(
+                        agent: $this,
+                        availableTools: $authorized,
+                        scopePaths: [],
+                        activeSkill: $activeSkills
+                    );
+                }
+            }
+        } catch (\Throwable) {
+            // Fall back gracefully to direct allow-list authorization
         }
 
         return $authorized;
@@ -299,6 +335,26 @@ abstract class AbstractAgent implements AgentContract
         $summary = $registry->buildSummaries($this->getName(), $activeSkillNames);
 
         return $summary !== '' ? $summary : null;
+    }
+
+    /**
+     * Builds compact Allowed File Map (Explore Only vs Can Modify vs Ignore) for token-saving boundaries.
+     */
+    public function buildAllowedFileMapSection(RunState $state): ?string
+    {
+        $registry = $this->getSkillRegistry();
+        if (! $registry->isEnabled()) {
+            return null;
+        }
+
+        $requested = (array) ($state->metadata['active_skills'] ?? []);
+        if (empty($requested)) {
+            $requested = $this->getSkills();
+        }
+
+        $map = $registry->buildAllowedFileMap($this->getName(), $requested);
+
+        return $map !== '' ? $map : null;
     }
 
     /**

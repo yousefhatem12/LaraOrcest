@@ -14,6 +14,18 @@ use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 class PatchWriterTool implements ToolContract
 {
     /**
+     * @var array<int, string>
+     */
+    protected array $allowedModifyPaths = [];
+
+    protected bool $enforceModifyPaths = false;
+
+    /**
+     * @var array<int, string>
+     */
+    protected array $ignorePaths = [];
+
+    /**
      * @param  array<int, string>  $allowedPrefixes
      */
     public function __construct(
@@ -23,6 +35,43 @@ class PatchWriterTool implements ToolContract
         protected ?WorkspaceContext $workspaceContext = null
     ) {
         $this->pathGuard = $pathGuard ?: ($workspaceContext ? $workspaceContext->createPathGuard() : new PathGuard());
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     */
+    public function setAllowedModifyPaths(array $paths, bool $enforce = true): self
+    {
+        $this->allowedModifyPaths = array_values(array_filter($paths, static fn ($p) => is_string($p) && trim($p) !== ''));
+        $this->enforceModifyPaths = $enforce;
+
+        return $this;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function getAllowedModifyPaths(): array
+    {
+        return $this->allowedModifyPaths;
+    }
+
+    /**
+     * @param  array<int, string>  $paths
+     */
+    public function setIgnorePaths(array $paths): self
+    {
+        $this->ignorePaths = array_values(array_filter($paths, static fn ($p) => is_string($p) && trim($p) !== ''));
+
+        return $this;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function getIgnorePaths(): array
+    {
+        return $this->ignorePaths;
     }
 
     public function getPathGuard(): PathGuard
@@ -126,6 +175,20 @@ class PatchWriterTool implements ToolContract
 
         $safePath = $this->pathGuard->resolveSafePath($rawPath, $this->allowedPrefixes, mustExist: false);
         $relativePath = $this->pathGuard->getRelativePath($safePath);
+
+        if (! empty($this->ignorePaths) && $this->pathGuard->matchesAnyGlob($relativePath, $this->ignorePaths)) {
+            throw new RuntimeException("Write access blocked by skill ignore_paths: [{$relativePath}]");
+        }
+
+        if ($this->enforceModifyPaths) {
+            if (empty($this->allowedModifyPaths)) {
+                throw new RuntimeException("Write access blocked: active skill is read-only (modify_paths is empty) for [{$relativePath}].");
+            }
+            if (! $this->pathGuard->matchesAnyGlob($relativePath, $this->allowedModifyPaths)) {
+                $allowedList = implode(', ', $this->allowedModifyPaths);
+                throw new RuntimeException("Write access blocked: [{$relativePath}] is outside skill modify_paths: [{$allowedList}]");
+            }
+        }
 
         $exists = file_exists($safePath);
         $oldContent = $exists ? (file_get_contents($safePath) ?: '') : '';

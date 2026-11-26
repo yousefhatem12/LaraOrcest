@@ -13,6 +13,9 @@ class Skill
      * @param  array<int, string>  $allowedTools
      * @param  array<int, string>  $tags
      * @param  array<string, mixed>  $metadata
+     * @param  array<int, string>  $explorePaths
+     * @param  array<int, string>  $modifyPaths
+     * @param  array<int, string>  $ignorePaths
      */
     public function __construct(
         public readonly string $name,
@@ -21,11 +24,56 @@ class Skill
         public readonly array $allowedTools = [],
         public readonly string $instructions = '',
         public readonly array $tags = [],
-        public readonly array $metadata = []
+        public readonly array $metadata = [],
+        public readonly array $explorePaths = [],
+        public readonly array $modifyPaths = [],
+        public readonly array $ignorePaths = [],
+        public readonly bool $hasExplicitExplorePaths = false,
+        public readonly bool $hasExplicitModifyPaths = false
     ) {
         if (trim($this->name) === '') {
             throw new InvalidArgumentException('Skill name cannot be empty.');
         }
+    }
+
+    /**
+     * Narrow globs this skill allows the agent to read/explore for context.
+     *
+     * @return array<int, string>
+     */
+    public function explorePaths(): array
+    {
+        return $this->explorePaths;
+    }
+
+    /**
+     * Exact globs this skill allows the agent to create or modify.
+     *
+     * @return array<int, string>
+     */
+    public function modifyPaths(): array
+    {
+        return $this->modifyPaths;
+    }
+
+    /**
+     * Excluded paths/globs that must never be loaded into prompt context.
+     *
+     * @return array<int, string>
+     */
+    public function ignorePaths(): array
+    {
+        return $this->ignorePaths;
+    }
+
+    public function hasDeclaredExplorePaths(): bool
+    {
+        return $this->hasExplicitExplorePaths || ! empty($this->explorePaths) || ! empty($this->modifyPaths);
+    }
+
+    public function hasDeclaredModifyPaths(): bool
+    {
+        return $this->hasExplicitModifyPaths || ! empty($this->modifyPaths);
     }
 
     /**
@@ -76,6 +124,11 @@ class Skill
         $agents = ['*'];
         $allowedTools = [];
         $tags = [];
+        $explorePaths = [];
+        $modifyPaths = [];
+        $ignorePaths = [];
+        $hasExplicitExplorePaths = false;
+        $hasExplicitModifyPaths = false;
         $instructions = trim($normalized);
 
         // Check for YAML-like frontmatter: ^---\n(.*?)\n---\n(.*)$
@@ -102,6 +155,25 @@ class Skill
             if (isset($parsed['tags'])) {
                 $tags = self::normalizeList($parsed['tags']);
             }
+            if (array_key_exists('explore_paths', $parsed)) {
+                $explorePaths = self::normalizeList($parsed['explore_paths']);
+                $hasExplicitExplorePaths = true;
+            } elseif (array_key_exists('explorepaths', $parsed)) {
+                $explorePaths = self::normalizeList($parsed['explorepaths']);
+                $hasExplicitExplorePaths = true;
+            }
+            if (array_key_exists('modify_paths', $parsed)) {
+                $modifyPaths = self::normalizeList($parsed['modify_paths']);
+                $hasExplicitModifyPaths = true;
+            } elseif (array_key_exists('modifypaths', $parsed)) {
+                $modifyPaths = self::normalizeList($parsed['modifypaths']);
+                $hasExplicitModifyPaths = true;
+            }
+            if (array_key_exists('ignore_paths', $parsed)) {
+                $ignorePaths = self::normalizeList($parsed['ignore_paths']);
+            } elseif (array_key_exists('ignorepaths', $parsed)) {
+                $ignorePaths = self::normalizeList($parsed['ignorepaths']);
+            }
         } else {
             // Fallback: extract first # Heading as title and first non-heading line as description
             if (preg_match('/^#\s+(.+)$/m', $normalized, $headingMatch)) {
@@ -126,7 +198,12 @@ class Skill
             allowedTools: $allowedTools,
             instructions: $instructions,
             tags: $tags,
-            metadata: $extraMeta
+            metadata: $extraMeta,
+            explorePaths: $explorePaths,
+            modifyPaths: $modifyPaths,
+            ignorePaths: $ignorePaths,
+            hasExplicitExplorePaths: $hasExplicitExplorePaths,
+            hasExplicitModifyPaths: $hasExplicitModifyPaths
         );
     }
 
@@ -140,6 +217,9 @@ class Skill
             'description' => $this->description,
             'agents' => $this->agents,
             'allowed_tools' => $this->allowedTools,
+            'explore_paths' => $this->explorePaths,
+            'modify_paths' => $this->modifyPaths,
+            'ignore_paths' => $this->ignorePaths,
             'instructions' => $this->instructions,
             'tags' => $this->tags,
             'metadata' => $this->metadata,
@@ -151,6 +231,9 @@ class Skill
      */
     public static function fromArray(array $data): self
     {
+        $hasExplore = array_key_exists('explore_paths', $data) || array_key_exists('explorePaths', $data);
+        $hasModify = array_key_exists('modify_paths', $data) || array_key_exists('modifyPaths', $data);
+
         return new self(
             name: (string) ($data['name'] ?? 'unnamed-skill'),
             description: (string) ($data['description'] ?? ''),
@@ -158,7 +241,12 @@ class Skill
             allowedTools: (array) ($data['allowed_tools'] ?? $data['allowedTools'] ?? []),
             instructions: (string) ($data['instructions'] ?? ''),
             tags: (array) ($data['tags'] ?? []),
-            metadata: (array) ($data['metadata'] ?? [])
+            metadata: (array) ($data['metadata'] ?? []),
+            explorePaths: self::normalizeList($data['explore_paths'] ?? $data['explorePaths'] ?? []),
+            modifyPaths: self::normalizeList($data['modify_paths'] ?? $data['modifyPaths'] ?? []),
+            ignorePaths: self::normalizeList($data['ignore_paths'] ?? $data['ignorePaths'] ?? []),
+            hasExplicitExplorePaths: $hasExplore,
+            hasExplicitModifyPaths: $hasModify
         );
     }
 

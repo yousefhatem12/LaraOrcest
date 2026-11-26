@@ -9,6 +9,25 @@ allowed_tools:
   - file_reader
   - patch_writer
   - codebase_inspector
+explore_paths:
+  - composer.json
+  - app/**
+  - routes/**
+  - config/**
+  - database/**
+modify_paths:
+  - app/**
+  - routes/**
+  - config/**
+  - database/**
+ignore_paths:
+  - vendor/**
+  - node_modules/**
+  - storage/**
+  - bootstrap/cache/**
+  - .git/**
+  - public/**
+  - resources/**
 tags:
   - scaffolding
   - directories
@@ -38,3 +57,6 @@ When scaffolding directory hierarchies and foundational file structures inside t
 4. **Dry-Run & Idempotency:**
    - In `dry_run` mode, return planned directory lists and file paths without creating directories on disk.
    - Handle pre-existing directories gracefully without throwing errors or duplicating entries.
+
+5. **Token-Budget & Minimal-Context Rules:**
+   - Inspect ONLY `explore_paths`, modify ONLY `modify_paths`, and NEVER scan or load files outside these globs or in `ignore_paths`.
