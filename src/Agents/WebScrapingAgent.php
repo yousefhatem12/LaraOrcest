@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\Agents;
 
-use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use RuntimeException;
 use Throwable;
 use Yousef\LaraOrcest\State\RunState;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\HttpClient;
 
 class WebScrapingAgent extends AbstractAgent
 {
@@ -294,7 +294,7 @@ class WebScrapingAgent extends AbstractAgent
         );
 
         try {
-            $response = Http::timeout($timeout)
+            $response = HttpClient::factory()->timeout($timeout)
                 ->retry($retries, $sleep)
                 ->withHeaders(['User-Agent' => $userAgent])
                 ->get($url);
@@ -405,7 +405,7 @@ class WebScrapingAgent extends AbstractAgent
         $sleep = (int) Config::get('lara-orcest.web_scraping.retry_sleep', 100);
 
         try {
-            $client = Http::timeout($timeout)->retry($retries, $sleep, throw: false);
+            $client = HttpClient::factory()->timeout($timeout)->retry($retries, $sleep, throw: false);
             if (! empty($headers)) {
                 $client = $client->withHeaders($headers);
             }

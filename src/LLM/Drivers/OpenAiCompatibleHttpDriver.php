@@ -6,17 +6,19 @@ namespace Yousef\LaraOrcest\LLM\Drivers;
 
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\HttpClient;
 
 class OpenAiCompatibleHttpDriver implements LlmDriverContract
 {
+    protected string $model = 'gpt-4o-mini';
+
     public function __construct(
         protected ?string $baseUrl = null,
         protected ?string $apiKey = null,
-        protected string $model = 'gpt-4o-mini',
+        ?string $model = null,
         protected int $timeout = 60,
         protected int $retries = 2,
         protected int $retrySleep = 100
@@ -31,7 +33,7 @@ class OpenAiCompatibleHttpDriver implements LlmDriverContract
             Config::get('lara-orcest.llm.providers.openai.api_key', '')
         );
 
-        $this->model = (string) Config::get(
+        $this->model = $model ?: (string) Config::get(
             'lara-orcest.llm.drivers.openai_compatible.model',
             Config::get('lara-orcest.llm.providers.openai.model', $this->model)
         );
@@ -215,7 +217,7 @@ class OpenAiCompatibleHttpDriver implements LlmDriverContract
             $headers['X-Node-Id'] = (string) $options['node_id'];
         }
 
-        $client = Http::withHeaders($headers)->timeout($timeout);
+        $client = HttpClient::factory()->withHeaders($headers)->timeout($timeout);
 
         if (! empty($this->apiKey)) {
             $client = $client->withToken($this->apiKey);

@@ -44,6 +44,7 @@ return [
                 'driver' => 'openai_compatible',
                 'base_url' => env('LARA_ORCEST_LLM_BASE_URL', 'https://api.openai.com/v1'),
                 'api_key' => env('LARA_ORCEST_LLM_API_KEY', env('OPENAI_API_KEY')),
+                'api_secret' => env('LARA_ORCEST_LLM_API_SECRET'),
                 'model' => env('LARA_ORCEST_LLM_MODEL', 'gpt-4o-mini'),
                 'timeout' => (int) env('LARA_ORCEST_LLM_TIMEOUT', 60),
                 'retries' => (int) env('LARA_ORCEST_LLM_RETRIES', 2),
@@ -112,6 +113,18 @@ return [
                 'api_key' => env('OPENAI_API_KEY'),
                 'model' => env('LARA_ORCEST_OPENAI_MODEL', 'gpt-4o'),
                 'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+            ],
+            'groq' => [
+                'driver' => 'groq',
+                'api_key' => env('GROQ_API_KEY'),
+                'model' => env('LARA_ORCEST_GROQ_MODEL', 'llama-3.3-70b-versatile'),
+                'base_url' => env('GROQ_BASE_URL', 'https://api.groq.com/openai/v1'),
+            ],
+            'openrouter' => [
+                'driver' => 'openrouter',
+                'api_key' => env('OPENROUTER_API_KEY'),
+                'model' => env('LARA_ORCEST_OPENROUTER_MODEL', 'openai/gpt-4o-mini'),
+                'base_url' => env('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
             ],
             'anthropic' => [
                 'driver' => 'anthropic',

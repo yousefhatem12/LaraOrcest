@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\Tools;
 
-use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Throwable;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\HttpClient;
 
 class HttpFetchTool implements ToolContract
 {
@@ -63,7 +63,7 @@ class HttpFetchTool implements ToolContract
         );
 
         try {
-            $response = Http::timeout($timeout)
+            $response = HttpClient::factory()->timeout($timeout)
                 ->retry($retries, $sleep)
                 ->withHeaders(['User-Agent' => $userAgent])
                 ->get($validatedUrl);

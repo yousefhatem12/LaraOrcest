@@ -10,6 +10,8 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Yousef\LaraOrcest\Config\EnvCredentialManager;
+use Yousef\LaraOrcest\Config\OrchestratorConfig;
 use Yousef\LaraOrcest\Console\Concerns\InteractsWithOnboarding;
 use Yousef\LaraOrcest\Workspace\WorkspaceContext;
 
@@ -29,7 +31,8 @@ class InitCommand extends Command
             ->addOption('laravel-version', null, InputOption::VALUE_OPTIONAL, 'Target Laravel version constraint to install (e.g. ^12.0, ^11.0)')
             ->addOption('format', 'f', InputOption::VALUE_OPTIONAL, 'Config file format (json or php)', 'json')
             ->addOption('create', 'c', InputOption::VALUE_NONE, 'Create target directory if it does not exist')
-            ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing configuration file if present');
+            ->addOption('force', null, InputOption::VALUE_NONE, 'Overwrite existing configuration file if present')
+            ->addOption('configure-llm', null, InputOption::VALUE_NONE, 'Interactively configure LLM provider and API credentials in .env');
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -156,6 +159,28 @@ class InitCommand extends Command
             "State Directory: {$stateDir}",
             "Config File: {$targetConfigFile}",
         ]);
+
+        // Load any existing .env files and optionally configure LLM credentials
+        $config = OrchestratorConfig::load($canonicalTarget);
+        $activeDriver = EnvCredentialManager::resolveActiveDriver(null, $config);
+        $hasCredentials = $activeDriver !== null && EnvCredentialManager::hasCredentialsForDriver($activeDriver, $config);
+
+        if ((bool) $input->getOption('configure-llm')) {
+            if (! $hasCredentials || $force) {
+                if ($this->canPromptInteractively($input)) {
+                    $this->promptAndPersistLlmCredentials($io, $config, $canonicalTarget);
+                } else {
+                    $envPath = EnvCredentialManager::resolveTargetEnvPath($canonicalTarget);
+                    $io->error(EnvCredentialManager::describeMissingCredentials($activeDriver, $envPath));
+
+                    return Command::FAILURE;
+                }
+            } else {
+                $io->text("Detected existing LLM credentials for provider [<info>{$activeDriver}</info>].");
+            }
+        } elseif (! $hasCredentials) {
+            $io->note('No LLM API key detected in .env yet. Run `lara-orcest build` or `lara-orcest init --configure-llm` to configure your provider and API key interactively.');
+        }
 
         $io->text('You can now run orchestration commands against this workspace:');
         $io->text("  <info>lara-orcest build \"Build a REST API for invoices\" --target=\"{$canonicalTarget}\"</info>");

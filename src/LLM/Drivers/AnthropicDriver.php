@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\LLM\Drivers;
 
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\HttpClient;
 
 class AnthropicDriver implements LlmDriverContract
 {
@@ -56,7 +56,7 @@ class AnthropicDriver implements LlmDriverContract
             $payload['system'] = $systemPrompt;
         }
 
-        $response = Http::withHeaders([
+        $response = HttpClient::factory()->withHeaders([
             'x-api-key' => $this->apiKey,
             'anthropic-version' => '2023-06-01',
             'content-type' => 'application/json',

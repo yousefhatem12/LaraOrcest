@@ -66,8 +66,18 @@ class LlmManager
     {
         return match (strtolower($name)) {
             'fake' => new FakeDriver(),
-            'openai_compatible', 'openai-compatible' => new OpenAiCompatibleHttpDriver(),
-            'openai' => new OpenAiCompatibleHttpDriver(),
+            'openai_compatible', 'openai-compatible', 'custom' => new OpenAiCompatibleHttpDriver(),
+            'openai' => new OpenAiDriver(),
+            'groq' => new OpenAiCompatibleHttpDriver(
+                baseUrl: (string) Config::get('lara-orcest.llm.providers.groq.base_url', 'https://api.groq.com/openai/v1'),
+                apiKey: (string) (Config::get('lara-orcest.llm.providers.groq.api_key') ?: Config::get('lara-orcest.llm.drivers.openai_compatible.api_key', '')),
+                model: (string) Config::get('lara-orcest.llm.providers.groq.model', 'llama-3.3-70b-versatile'),
+            ),
+            'openrouter' => new OpenAiCompatibleHttpDriver(
+                baseUrl: (string) Config::get('lara-orcest.llm.providers.openrouter.base_url', 'https://openrouter.ai/api/v1'),
+                apiKey: (string) (Config::get('lara-orcest.llm.providers.openrouter.api_key') ?: Config::get('lara-orcest.llm.drivers.openai_compatible.api_key', '')),
+                model: (string) Config::get('lara-orcest.llm.providers.openrouter.model', 'openai/gpt-4o-mini'),
+            ),
             'anthropic' => new AnthropicDriver(),
             'gemini' => new GeminiDriver(),
             'ollama' => new OllamaDriver(),

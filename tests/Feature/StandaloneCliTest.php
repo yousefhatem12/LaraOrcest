@@ -4,26 +4,54 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\Tests\Feature;
 
+use Illuminate\Container\Container;
+use Illuminate\Http\Client\Factory;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Facade;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\ApplicationTester;
 use Symfony\Component\Process\Process;
 use Yousef\LaraOrcest\Console\LaraOrcestApplication;
 use Yousef\LaraOrcest\State\Drivers\JsonCheckpointer;
 use Yousef\LaraOrcest\State\RunState;
+use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\HttpClient;
 
 class StandaloneCliTest extends TestCase
 {
     private string $tempWorkspace;
+    private array $envBackup = [];
+    private array $serverBackup = [];
+    private mixed $previousFacadeApp = null;
+    private mixed $previousContainer = null;
 
     protected function setUp(): void
     {
         parent::setUp();
+        $this->envBackup = $_ENV;
+        $this->serverBackup = $_SERVER;
+        $this->previousFacadeApp = Facade::getFacadeApplication();
+        $this->previousContainer = Container::getInstance();
+        Config::clearOverrides();
+        HttpClient::reset();
         $this->tempWorkspace = sys_get_temp_dir() . '/lara_orcest_cli_test_' . uniqid();
         mkdir($this->tempWorkspace, 0755, true);
     }
 
     protected function tearDown(): void
     {
+        HttpClient::reset();
+        Config::clearOverrides();
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication($this->previousFacadeApp);
+        Container::setInstance($this->previousContainer);
+
+        foreach (['LARA_ORCEST_LLM', 'GROQ_API_KEY', 'OPENAI_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'LARA_ORCEST_LLM_API_KEY', 'LARA_ORCEST_LLM_API_SECRET', 'GROQ_BASE_URL', 'LARA_ORCEST_GROQ_MODEL'] as $var) {
+            putenv($var);
+        }
+        $_ENV = $this->envBackup;
+        $_SERVER = $this->serverBackup;
+
         if (is_dir($this->tempWorkspace)) {
             $this->removeDirectory($this->tempWorkspace);
         }
@@ -241,5 +269,220 @@ class StandaloneCliTest extends TestCase
         $this->assertStringContainsString('Target Laravel Version: ^11.0', $display);
         $this->assertStringContainsString('laravel/laravel:^11.0', $display);
         $this->assertStringContainsString('Prompt: Build Inventory API', $display);
+    }
+
+    public function test_build_command_prompts_for_missing_credentials_persists_env_and_executes(): void
+    {
+        unset($_ENV['LARA_ORCEST_LLM'], $_SERVER['LARA_ORCEST_LLM']);
+        putenv('LARA_ORCEST_LLM');
+
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication(null);
+        Container::setInstance(null);
+
+        $factory = new Factory();
+        $factory->fake([
+            'https://api.groq.com/openai/v1/chat/completions' => function (Request $request) use ($factory) {
+                $payload = $request->data();
+                $system = (string) ($payload['messages'][0]['content'] ?? '');
+
+                if (str_contains($system, 'Domain Rules')) {
+                    $json = ['business_rules' => ['Invoices require positive amount'], 'edge_cases' => ['Duplicate ID']];
+                } elseif (str_contains($system, 'Business Analyst')) {
+                    $json = [
+                        'domain_entities' => ['Invoice'],
+                        'functional_requirements' => ['Create invoice'],
+                        'business_rules' => ['Amount > 0'],
+                    ];
+                } else {
+                    $json = [
+                        'tasks' => [[
+                            'id' => 'T1',
+                            'title' => 'Implement Invoice API',
+                            'priority' => 1,
+                            'acceptance_criteria' => ['Returns 201'],
+                        ]],
+                    ];
+                }
+
+                return $factory->response([
+                    'choices' => [['message' => ['content' => json_encode($json)]]],
+                    'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 10, 'total_tokens' => 15],
+                ], 200);
+            },
+        ]);
+        HttpClient::setStandaloneFactory($factory);
+
+        $app = new LaraOrcestApplication();
+        $tester = new ApplicationTester($app);
+        $tester->setInputs([
+            '^12.0',
+            'groq',
+            'gsk_live_test_key_123',
+            'secret_token_456',
+        ]);
+
+        $exitCode = $tester->run([
+            'command' => 'build',
+            'prompt' => 'Build an invoicing API',
+            '--target' => $this->tempWorkspace,
+            '--interactive' => true,
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $display = $tester->getDisplay();
+        $this->assertStringNotContainsString('A facade root has not been set', $display);
+        $this->assertStringContainsString('Select your LLM provider', $display);
+        $this->assertStringContainsString('Saved LLM credentials [groq]', $display);
+
+        // Verify .env & .gitignore persisted
+        $envFile = $this->tempWorkspace . '/.env';
+        $this->assertFileExists($envFile);
+        $envContent = (string) file_get_contents($envFile);
+        $this->assertStringContainsString('LARA_ORCEST_LLM=groq', $envContent);
+        $this->assertStringContainsString('GROQ_API_KEY=gsk_live_test_key_123', $envContent);
+        $this->assertStringContainsString('LARA_ORCEST_LLM_API_SECRET=secret_token_456', $envContent);
+        $this->assertFileExists($this->tempWorkspace . '/.gitignore');
+        $this->assertStringContainsString('.env', (string) file_get_contents($this->tempWorkspace . '/.gitignore'));
+
+        // Verify request was actually dispatched with the entered API key
+        $factory->assertSent(static fn (Request $req) => $req->hasHeader('Authorization', 'Bearer gsk_live_test_key_123'));
+    }
+
+    public function test_build_command_auto_loads_existing_env_without_reprompting(): void
+    {
+        unset($_ENV['LARA_ORCEST_LLM'], $_SERVER['LARA_ORCEST_LLM']);
+        putenv('LARA_ORCEST_LLM');
+
+        file_put_contents(
+            $this->tempWorkspace . '/.env',
+            "LARA_ORCEST_LLM=groq\nGROQ_API_KEY=gsk_preconfigured_999\nLARA_ORCEST_LLM_API_SECRET=sec_preconfigured\n"
+        );
+
+        Facade::clearResolvedInstances();
+        Facade::setFacadeApplication(null);
+        Container::setInstance(null);
+
+        $factory = new Factory();
+        $factory->fake([
+            'https://api.groq.com/openai/v1/chat/completions' => function (Request $request) use ($factory) {
+                $payload = $request->data();
+                $system = (string) ($payload['messages'][0]['content'] ?? '');
+
+                if (str_contains($system, 'Domain Rules')) {
+                    $json = ['business_rules' => ['Valid email required'], 'edge_cases' => []];
+                } elseif (str_contains($system, 'Business Analyst')) {
+                    $json = [
+                        'domain_entities' => ['User'],
+                        'functional_requirements' => ['User login'],
+                        'business_rules' => ['Valid email required'],
+                    ];
+                } else {
+                    $json = [
+                        'tasks' => [[
+                            'id' => 'T1',
+                            'title' => 'User Login',
+                            'priority' => 1,
+                            'acceptance_criteria' => ['Returns JWT'],
+                        ]],
+                    ];
+                }
+
+                return $factory->response([
+                    'choices' => [['message' => ['content' => json_encode($json)]]],
+                    'usage' => ['prompt_tokens' => 5, 'completion_tokens' => 10, 'total_tokens' => 15],
+                ], 200);
+            },
+        ]);
+        HttpClient::setStandaloneFactory($factory);
+
+        $app = new LaraOrcestApplication();
+        $tester = new ApplicationTester($app);
+
+        $exitCode = $tester->run([
+            'command' => 'build',
+            'prompt' => 'Build user login endpoint',
+            '--target' => $this->tempWorkspace,
+            '--laravel-version' => '^12.0',
+            '--interactive' => true,
+            '--no-interaction' => true,
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $display = $tester->getDisplay();
+        $this->assertStringNotContainsString('Select your LLM provider', $display);
+        $this->assertStringNotContainsString('A facade root has not been set', $display);
+        $factory->assertSent(static fn (Request $req) => $req->hasHeader('Authorization', 'Bearer gsk_preconfigured_999'));
+    }
+
+    public function test_build_command_fails_actionably_when_non_interactive_and_credentials_missing(): void
+    {
+        unset($_ENV['LARA_ORCEST_LLM'], $_SERVER['LARA_ORCEST_LLM']);
+        putenv('LARA_ORCEST_LLM');
+
+        $app = new LaraOrcestApplication();
+        $tester = new ApplicationTester($app);
+
+        $exitCode = $tester->run([
+            'command' => 'build',
+            'prompt' => 'Build inventory service',
+            '--target' => $this->tempWorkspace,
+            '--laravel-version' => '^12.0',
+            '--no-interaction' => true,
+        ]);
+
+        $this->assertSame(1, $exitCode);
+        $display = preg_replace('/\s+/', ' ', $tester->getDisplay()) ?? '';
+        $this->assertStringContainsString('No LLM provider or API key is configured', $display);
+        $this->assertStringContainsString('--llm=fake', $display);
+        $this->assertStringContainsString('GROQ_API_KEY', $display);
+    }
+
+    public function test_bin_lara_orcest_process_loads_env_without_facade_root_error(): void
+    {
+        $binary = dirname(__DIR__, 2) . '/bin/lara-orcest';
+        file_put_contents(
+            $this->tempWorkspace . '/.env',
+            "LARA_ORCEST_LLM=openai\nOPENAI_API_KEY=sk-local-test\nOPENAI_BASE_URL=http://127.0.0.1:1/v1\n"
+        );
+
+        $process = new Process(
+            ['php', $binary, 'build', 'Build notes API', '--target=' . $this->tempWorkspace, '--laravel-version=^12.0', '--no-human-review', '--no-interaction'],
+            env: ['LARA_ORCEST_LLM' => false]
+        );
+        $process->run();
+
+        $combined = $process->getOutput() . $process->getErrorOutput();
+        $this->assertStringNotContainsString('A facade root has not been set', $combined);
+        $this->assertStringContainsString('business_analyst', $combined);
+    }
+
+    public function test_init_command_with_configure_llm_prompts_and_persists_env(): void
+    {
+        unset($_ENV['LARA_ORCEST_LLM'], $_SERVER['LARA_ORCEST_LLM']);
+        putenv('LARA_ORCEST_LLM');
+
+        $app = new LaraOrcestApplication();
+        $tester = new ApplicationTester($app);
+        $tester->setInputs([
+            '^12.0',
+            'gemini',
+            'AIzaSyTestKey123',
+            '',
+        ]);
+
+        $exitCode = $tester->run([
+            'command' => 'init',
+            'project-dir' => $this->tempWorkspace,
+            '--configure-llm' => true,
+        ]);
+
+        $this->assertSame(0, $exitCode);
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('Saved LLM credentials [gemini]', $display);
+
+        $envContent = (string) file_get_contents($this->tempWorkspace . '/.env');
+        $this->assertStringContainsString('LARA_ORCEST_LLM=gemini', $envContent);
+        $this->assertStringContainsString('GEMINI_API_KEY=AIzaSyTestKey123', $envContent);
     }
 }

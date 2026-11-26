@@ -9,6 +9,7 @@ use Yousef\LaraOrcest\Console\Commands\ApproveCommand;
 use Yousef\LaraOrcest\Console\Commands\BuildCommand;
 use Yousef\LaraOrcest\Console\Commands\InitCommand;
 use Yousef\LaraOrcest\Console\Commands\StatusCommand;
+use Yousef\LaraOrcest\Support\StandaloneBootstrap;
 
 class LaraOrcestApplication extends Application
 {
@@ -18,6 +19,8 @@ class LaraOrcestApplication extends Application
     public function __construct()
     {
         parent::__construct(self::NAME, self::VERSION);
+
+        StandaloneBootstrap::ensureFacadeRoot();
 
         $this->setAutoExit(false);
 

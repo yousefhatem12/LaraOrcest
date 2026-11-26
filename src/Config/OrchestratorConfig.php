@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\Config;
 
-use Dotenv\Dotenv;
 use Yousef\LaraOrcest\Support\Config;
 
 class OrchestratorConfig
@@ -34,14 +33,8 @@ class OrchestratorConfig
     {
         $targetProjectPath = self::resolveTargetProjectPath($targetProjectPath);
 
-        // 1. Load environment variables from target project if .env exists
-        if ($targetProjectPath !== null && file_exists($targetProjectPath . DIRECTORY_SEPARATOR . '.env')) {
-            try {
-                Dotenv::createImmutable($targetProjectPath)->safeLoad();
-            } catch (\Throwable) {
-                // Ignore Dotenv parse errors on invalid .env
-            }
-        }
+        // 1. Load environment variables from target workspace and/or current working directory if .env exists
+        EnvCredentialManager::loadEnvFiles($targetProjectPath);
 
         // 2. Load package default configuration
         $defaultsPath = __DIR__ . '/../../config/lara-orcest.php';

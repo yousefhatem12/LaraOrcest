@@ -11,6 +11,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Yousef\LaraOrcest\Config\EnvCredentialManager;
 use Yousef\LaraOrcest\Console\Concerns\InteractsWithOnboarding;
 use Yousef\LaraOrcest\Orchestrator;
 use Yousef\LaraOrcest\State\RunState;
@@ -39,7 +40,7 @@ class BuildCommand extends Command
             ->addOption('approve', null, InputOption::VALUE_NONE, 'Approve a paused run when resuming')
             ->addOption('reject', null, InputOption::VALUE_NONE, 'Reject a paused run when resuming')
             ->addOption('note', null, InputOption::VALUE_OPTIONAL, 'Human review or approval feedback notes')
-            ->addOption('llm', null, InputOption::VALUE_OPTIONAL, 'LLM driver to use (openai_compatible, fake, openai, anthropic, gemini, ollama)')
+            ->addOption('llm', null, InputOption::VALUE_OPTIONAL, 'LLM driver to use (openai_compatible, groq, openrouter, openai, anthropic, gemini, ollama, custom, fake)')
             ->addOption('max-steps', null, InputOption::VALUE_OPTIONAL, 'Maximum graph execution steps')
             ->addOption('max-fix-attempts', null, InputOption::VALUE_OPTIONAL, 'Maximum bug-fix loop retries')
             ->addOption('no-memory', null, InputOption::VALUE_NONE, 'Bypass project memory recall and consolidation')
@@ -119,12 +120,31 @@ class BuildCommand extends Command
             $options['max_fix_attempts'] = (int) $input->getOption('max-fix-attempts');
         }
 
-        if ($input->getOption('llm')) {
-            $options['llm'] = (string) $input->getOption('llm');
-        } elseif (! empty($_ENV['LARA_ORCEST_LLM'])) {
-            $options['llm'] = (string) $_ENV['LARA_ORCEST_LLM'];
-        } elseif ($dryRun && empty($context->getConfig()->get('llm.openai_compatible.api_key'))) {
-            $options['llm'] = 'fake';
+        $explicitLlm = $input->getOption('llm') ? (string) $input->getOption('llm') : null;
+        $skipCredentialCheck = ($resumeId !== '' && (bool) $input->getOption('reject'));
+
+        if (! $skipCredentialCheck) {
+            $detectedDriver = EnvCredentialManager::resolveActiveDriver($explicitLlm, $context->getConfig());
+
+            if ($dryRun && $explicitLlm === null && $detectedDriver === null) {
+                $options['llm'] = 'fake';
+            } elseif ($detectedDriver === 'fake') {
+                $options['llm'] = 'fake';
+            } elseif ($detectedDriver !== null && EnvCredentialManager::hasCredentialsForDriver($detectedDriver, $context->getConfig())) {
+                $options['llm'] = $detectedDriver;
+            } elseif ($this->canPromptInteractively($input)) {
+                $options['llm'] = $this->promptAndPersistLlmCredentials(
+                    io: $io,
+                    config: $context->getConfig(),
+                    targetProjectPath: $context->getTargetProjectPath(),
+                    presetProvider: $explicitLlm ?? $detectedDriver
+                );
+            } else {
+                $envPath = EnvCredentialManager::resolveTargetEnvPath($context->getTargetProjectPath());
+                $io->error(EnvCredentialManager::describeMissingCredentials($explicitLlm ?? $detectedDriver, $envPath));
+
+                return Command::FAILURE;
+            }
         }
 
         if ($input->getOption('interactive')) {

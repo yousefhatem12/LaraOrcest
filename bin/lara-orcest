@@ -25,6 +25,9 @@ if ($autoloader === null) {
 require $autoloader;
 
 use Yousef\LaraOrcest\Console\LaraOrcestApplication;
+use Yousef\LaraOrcest\Support\StandaloneBootstrap;
+
+StandaloneBootstrap::ensureFacadeRoot();
 
 $application = new LaraOrcestApplication();
 exit($application->run());

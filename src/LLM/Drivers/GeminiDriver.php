@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\LLM\Drivers;
 
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\HttpClient;
 
 class GeminiDriver implements LlmDriverContract
 {
@@ -55,7 +55,7 @@ class GeminiDriver implements LlmDriverContract
         $modelName = $options['model'] ?? $this->model;
         $url = rtrim($this->baseUrl, '/') . "/models/{$modelName}:generateContent?key={$this->apiKey}";
 
-        $response = Http::timeout($this->timeout)->post($url, $payload);
+        $response = HttpClient::factory()->timeout($this->timeout)->post($url, $payload);
 
         if (! $response->successful()) {
             throw new RuntimeException("Gemini API request failed: [{$response->status()}] " . $response->body());
@@ -109,7 +109,7 @@ class GeminiDriver implements LlmDriverContract
         $modelName = $options['model'] ?? $this->model;
         $url = rtrim($this->baseUrl, '/') . "/models/{$modelName}:generateContent?key={$this->apiKey}";
 
-        $response = Http::timeout($this->timeout)->post($url, $payload);
+        $response = HttpClient::factory()->timeout($this->timeout)->post($url, $payload);
 
         if (! $response->successful()) {
             throw new RuntimeException("Gemini structured request failed: [{$response->status()}] " . $response->body());

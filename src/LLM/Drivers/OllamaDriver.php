@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\LLM\Drivers;
 
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Yousef\LaraOrcest\Contracts\LlmDriverContract;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\HttpClient;
 
 class OllamaDriver implements LlmDriverContract
 {
@@ -34,7 +34,7 @@ class OllamaDriver implements LlmDriverContract
             'stream' => false,
         ];
 
-        $response = Http::timeout($this->timeout)->post(rtrim($this->baseUrl, '/') . '/api/chat', $payload);
+        $response = HttpClient::factory()->timeout($this->timeout)->post(rtrim($this->baseUrl, '/') . '/api/chat', $payload);
 
         if (! $response->successful()) {
             throw new RuntimeException("Ollama API request failed: [{$response->status()}] " . $response->body());
@@ -62,7 +62,7 @@ class OllamaDriver implements LlmDriverContract
             'stream' => false,
         ];
 
-        $response = Http::timeout($this->timeout)->post(rtrim($this->baseUrl, '/') . '/api/chat', $payload);
+        $response = HttpClient::factory()->timeout($this->timeout)->post(rtrim($this->baseUrl, '/') . '/api/chat', $payload);
 
         if (! $response->successful()) {
             throw new RuntimeException("Ollama structured request failed: [{$response->status()}] " . $response->body());

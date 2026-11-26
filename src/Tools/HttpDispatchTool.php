@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\Tools;
 
-use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Throwable;
 use Yousef\LaraOrcest\Contracts\ToolContract;
 use Yousef\LaraOrcest\Support\Config;
+use Yousef\LaraOrcest\Support\HttpClient;
 
 class HttpDispatchTool implements ToolContract
 {
@@ -99,7 +99,7 @@ class HttpDispatchTool implements ToolContract
         $sleep = (int) Config::get('lara-orcest.web_scraping.retry_sleep', 100);
 
         try {
-            $client = Http::timeout($timeout)->retry($retries, $sleep, throw: false);
+            $client = HttpClient::factory()->timeout($timeout)->retry($retries, $sleep, throw: false);
             if (! empty($headers)) {
                 $client = $client->withHeaders($headers);
             }

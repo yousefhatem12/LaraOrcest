@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Yousef\LaraOrcest\Console\Concerns;
 
+use RuntimeException;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Yousef\LaraOrcest\Config\EnvCredentialManager;
+use Yousef\LaraOrcest\Config\OrchestratorConfig;
 
 trait InteractsWithOnboarding
 {
@@ -103,5 +106,89 @@ trait InteractsWithOnboarding
         ]);
 
         @file_put_contents($jsonFile, (string) json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * Interactively prompts for LLM provider, API key, and optional API secret,
+     * persists them to .env, and hydrates runtime configuration immediately.
+     */
+    protected function promptAndPersistLlmCredentials(
+        SymfonyStyle $io,
+        OrchestratorConfig $config,
+        string $targetProjectPath,
+        ?string $presetProvider = null
+    ): string {
+        $providers = EnvCredentialManager::supportedProviders();
+        $providerKeys = array_keys($providers);
+
+        if ($presetProvider !== null && trim($presetProvider) !== '') {
+            $normalized = EnvCredentialManager::normalizeDriverName($presetProvider);
+            $selectedProvider = $normalized === 'openai_compatible' ? 'custom' : $normalized;
+            if (! isset($providers[$selectedProvider])) {
+                $selectedProvider = 'custom';
+            }
+            $io->note("LLM provider [{$normalized}] is missing credentials. Please enter your credentials below.");
+        } else {
+            $choiceLabels = [];
+            foreach ($providers as $key => $spec) {
+                $choiceLabels[$key] = $spec['label'];
+            }
+            $selected = (string) $io->choice('Select your LLM provider', $choiceLabels, 'groq');
+            $selectedProvider = isset($providers[$selected]) ? $selected : (string) (array_search($selected, $choiceLabels, true) ?: 'groq');
+        }
+
+        $spec = $providers[$selectedProvider] ?? $providers['custom'];
+        $baseUrl = null;
+        $model = null;
+        $apiKey = '';
+        $apiSecret = '';
+
+        if (! $spec['requires_key']) {
+            $baseUrlAnswer = $io->ask("Enter {$selectedProvider} Base URL", $spec['default_base_url']);
+            $baseUrl = is_string($baseUrlAnswer) && trim($baseUrlAnswer) !== '' ? trim($baseUrlAnswer) : $spec['default_base_url'];
+
+            $modelAnswer = $io->ask("Enter {$selectedProvider} model", $spec['default_model']);
+            $model = is_string($modelAnswer) && trim($modelAnswer) !== '' ? trim($modelAnswer) : $spec['default_model'];
+        } else {
+            if ($selectedProvider === 'custom') {
+                $baseUrlAnswer = $io->ask('Enter OpenAI-compatible API Base URL', $spec['default_base_url']);
+                $baseUrl = is_string($baseUrlAnswer) && trim($baseUrlAnswer) !== '' ? trim($baseUrlAnswer) : $spec['default_base_url'];
+
+                $modelAnswer = $io->ask('Enter model name', $spec['default_model']);
+                $model = is_string($modelAnswer) && trim($modelAnswer) !== '' ? trim($modelAnswer) : $spec['default_model'];
+            }
+
+            $keyEnvName = $spec['api_key_env'] ?? 'LARA_ORCEST_LLM_API_KEY';
+            $apiKey = (string) $io->askHidden(
+                "Enter {$selectedProvider} API key ({$keyEnvName})",
+                static function (mixed $value): string {
+                    $trimmed = is_string($value) ? trim($value) : '';
+                    if ($trimmed === '') {
+                        throw new RuntimeException('API key cannot be empty.');
+                    }
+
+                    return $trimmed;
+                }
+            );
+
+            $secretAnswer = $io->askHidden('Enter API secret (optional, press Enter to skip)');
+            $apiSecret = is_string($secretAnswer) ? trim($secretAnswer) : '';
+        }
+
+        $variables = EnvCredentialManager::buildEnvVariables(
+            provider: $selectedProvider,
+            apiKey: $apiKey,
+            apiSecret: $apiSecret,
+            baseUrl: $baseUrl,
+            model: $model
+        );
+
+        $envPath = EnvCredentialManager::resolveTargetEnvPath($targetProjectPath);
+        EnvCredentialManager::persistToEnvFile($envPath, $variables, ensureGitIgnore: true);
+        $resolvedDriver = EnvCredentialManager::hydrateRuntime($variables, $selectedProvider, $config);
+
+        $io->text("Saved LLM credentials [<info>{$resolvedDriver}</info>] to <info>{$envPath}</info>");
+
+        return $resolvedDriver;
     }
 }
